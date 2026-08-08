@@ -122,8 +122,16 @@ score, average finishing place, total penalties, current/best win streak, and a
 per-variant breakdown. The file also keeps the last 100 results with the ELO
 change for each.
 
-- Everyone starts at **1200**; K-factor is **24**, so an even 2-player matchup
-  moves ±12 and an upset moves more.
+- Everyone starts at **1200**. K-factor is **24** once a rating has settled,
+  but **48** for a player's first 30 games, shown as `?` on the leaderboard.
+  Without that, ratings across the two populations never meet: the bots play
+  thousands of games against each other while a person plays a handful a week,
+  so a human's rating crawls while the bot pool drifts. Each side moving at its
+  own K means a game is no longer strictly zero-sum — the usual trade for
+  letting a new rating find its level in a few games instead of a hundred.
+- **A bot's rating is only comparable to yours if you have actually played it.**
+  Self-play keeps the bots ranked correctly against *each other*, but the pool's
+  level against humans is anchored only by the games you play against them.
 - With 3–4 seats, ratings are a **pairwise round robin** — every seat is scored
   against every other and the K-factor is split between those matchups. Ratings
   stay zero-sum, and a 2-player game behaves exactly as it always did.

@@ -674,6 +674,12 @@ STATS_FILE = os.path.join(BASE, 'stats.json')
 STATS_VERSION = 1
 ELO_START = 1200.0
 ELO_K = 24.0          # rating points swapped on an even-odds win
+# A rating is only meaningful once it has games behind it. The bots rack up
+# thousands against each other while a person plays a handful a week, so a
+# human's rating would crawl while the bots' pool drifted away from it. New
+# players move at a bigger K until their rating has settled.
+ELO_K_NEW = 48.0
+ELO_PROVISIONAL = 30  # games before a rating stops being provisional
 HISTORY_MAX = 100     # most recent finished games kept in the file
 
 # Players are keyed by lowercased name: client ids are per-session, names are
@@ -802,15 +808,20 @@ def record_result(summary):
         recs.append(rec)
 
     m = len(keep)
-    k = ELO_K / (m - 1)
+    # Each side moves at its own K, so a newcomer converges quickly against
+    # opponents whose ratings are already settled. That does mean a game is no
+    # longer strictly zero-sum — the usual trade for letting new ratings find
+    # their level in a handful of games rather than a hundred.
+    ks = [(ELO_K_NEW if rec['played'] < ELO_PROVISIONAL else ELO_K) / (m - 1)
+          for rec in recs]
     deltas = [0.0] * m
     for a in range(m):
         for b in range(a + 1, m):
             pa, pb = place[keep[a]], place[keep[b]]
             sa = 1.0 if pa < pb else (0.5 if pa == pb else 0.0)
             ea = elo_expected(recs[a]['elo'], recs[b]['elo'])
-            deltas[a] += k * (sa - ea)
-            deltas[b] += k * ((1.0 - sa) - (1.0 - ea))
+            deltas[a] += ks[a] * (sa - ea)
+            deltas[b] += ks[b] * ((1.0 - sa) - (1.0 - ea))
 
     shared = {}
     for i in keep:
@@ -868,6 +879,7 @@ def leaderboard(game, limit=25):
         rec = normalize_record(rec)
         rows.append({'name': pl.get('name') or key,
                      'ai': bool(pl.get('ai')), 'profile': pl.get('profile'),
+                     'provisional': rec['played'] < ELO_PROVISIONAL,
                      'retired': bool(pl.get('ai')) and key.split(' ')[0] not in current
                      and key not in current,
                      'elo': round(rec['elo'], 1), 'played': rec['played'],

@@ -775,7 +775,9 @@ function renderStats(){
       +'onclick="showPlayer(\''+encodeURIComponent(r.name)+'\')">'
       +(r.ai?'🤖 ':'')+'<b>'+esc(r.name)+'</b></button>'
       +(r.retired?' <span class="lvl">retired</span>':'')
-      +'</td><td class="elo">'+r.elo+'</td>'
+      +'</td><td class="elo">'+r.elo
+      +(r.provisional?'<span class="lvl" title="Provisional — fewer than 30 games, so this rating is still settling and moves in bigger steps.">?</span>':'')
+      +'</td>'
       +'<td>'+r.wins+'&#8209;'+r.losses+'&#8209;'+r.ties+'</td>'
       +'<td>'+r.best+'</td><td>'+r.avg+'</td>'
       +'<td>'+streakTxt(r.streak)+'</td></tr>';
