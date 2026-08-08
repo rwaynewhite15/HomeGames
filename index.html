@@ -30,6 +30,40 @@
   #v-join .panel{max-width:420px;margin:60px auto;}
   #v-join input{width:100%;padding:12px;font-size:1.05em;border:1px solid #ccc;border-radius:10px;margin-bottom:12px;}
 
+  /* hub: game picker + who's here */
+  .gamegrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:12px;}
+  .gamecard{border:2px solid #e6e2da;border-radius:16px;padding:18px;background:#fff;text-align:left;
+    display:flex;flex-direction:column;gap:6px;transition:border-color .15s,transform .15s;}
+  .gamecard:hover{border-color:var(--blue);transform:translateY(-2px);}
+  .gamecard .gc-top{display:flex;align-items:center;gap:10px;}
+  .gamecard .gc-icon{font-size:1.8em;}
+  .gamecard .gc-name{font-size:1.15em;font-weight:700;}
+  .gamecard .gc-blurb{color:#777;font-size:.86em;line-height:1.45;}
+  .gamecard .gc-meta{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px;}
+  .chip{font-size:.72em;border-radius:20px;padding:3px 10px;background:#f0eee9;color:#666;}
+  .chip.live{background:var(--green);color:#fff;}
+  .chip.open{background:var(--blue);color:#fff;}
+  .soon{opacity:.55;}
+  .soon:hover{border-color:#e6e2da;transform:none;cursor:default;}
+
+  .people{display:flex;flex-direction:column;gap:6px;}
+  .person{display:flex;align-items:center;gap:10px;padding:9px 12px;border:1px solid #e6e2da;
+    border-radius:12px;background:#fff;text-align:left;width:100%;font-size:.95em;}
+  .person:hover{border-color:var(--blue);background:var(--blue-bg);}
+  .person .dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none;}
+  .person .pn{font-weight:700;}
+  .person .pw{color:#888;font-size:.85em;margin-left:auto;text-align:right;}
+
+  /* player profile card */
+  .prof-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
+  .prof-elo{margin-left:auto;background:var(--ink);color:#fff;border-radius:20px;padding:5px 14px;font-weight:700;}
+  .prof-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px;margin:14px 0;}
+  .prof-stat{background:#faf8f4;border:1px solid #eee;border-radius:10px;padding:8px 6px;text-align:center;}
+  .prof-stat b{display:block;font-size:1.15em;}
+  .prof-stat span{font-size:.72em;color:#888;text-transform:uppercase;letter-spacing:.03em;}
+  .prof-sec{text-align:left;font-size:.86em;color:#777;margin-top:10px;}
+  .prof-sec b{color:var(--ink);}
+
   /* table setup (humans + AI) */
   .table-setup{border:1px solid #e6e2da;border-radius:12px;padding:12px;margin-bottom:12px;background:#fcfbf9;}
   .tsrow{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;}
@@ -168,11 +202,30 @@
   </div>
 </div>
 
-<!-- ============ LOBBY ============ -->
-<div class="screen" id="v-lobby">
+<!-- ============ HUB ============ -->
+<div class="screen" id="v-hub">
   <div class="lobby-head">
-    <div><h1>🎲 HomeGames</h1><p class="sub">Live lobby — games update in real time</p></div>
-    <div class="whoami">Playing as <b id="whoName"></b> · <button class="link-btn" onclick="changeName()">change</button></div>
+    <div><h1>🎲 HomeGames</h1><p class="sub">Pick a game — everything updates live</p></div>
+    <div class="whoami">Playing as <b id="whoNameHub"></b> · <button class="link-btn" onclick="changeName()">change</button></div>
+  </div>
+
+  <div class="panel">
+    <h3>Games</h3>
+    <div class="gamegrid" id="gameGrid"></div>
+  </div>
+
+  <div class="panel">
+    <h3>Who's here <span style="font-weight:400;color:#aaa;font-size:.72em">tap anyone for their stats</span></h3>
+    <div class="people" id="peopleList"></div>
+  </div>
+</div>
+
+<!-- ============ GAME LOBBY ============ -->
+<div class="screen" id="v-lobby">
+  <div class="topbar">
+    <button class="link-btn" onclick="backToHub()">← All games</button>
+    <span class="tag" id="lobbyTag"></span>
+    <div class="whoami">Playing as <b id="whoName"></b></div>
   </div>
 
   <div class="panel">
@@ -207,7 +260,7 @@
 <!-- ============ ROOM ============ -->
 <div class="screen" id="v-room">
   <div class="topbar">
-    <button class="link-btn" onclick="leaveRoom()">← Back to Lobby</button>
+    <button class="link-btn" onclick="leaveRoom()">← Back to lobby</button>
     <span class="tag" id="roomTag"></span>
     <button class="link-btn" onclick="showRules()">Rules</button>
   </div>
@@ -224,6 +277,13 @@
     <button class="big-btn" id="rematchBtn" onclick="rematch()">Rematch</button>
     <button class="link-btn" onclick="hideEnd()">Keep looking at the boards</button>
     <button class="link-btn" onclick="hideEnd();leaveRoom()">Back to Lobby</button>
+  </div>
+</div>
+
+<div class="overlay" id="playerOverlay" onclick="if(event.target===this)this.classList.remove('show')">
+  <div class="modal">
+    <div id="playerBody"></div>
+    <button class="big-btn" onclick="document.getElementById('playerOverlay').classList.remove('show')">Close</button>
   </div>
 </div>
 
@@ -267,12 +327,15 @@ let lastRollKey=null;
 let lastStepKey=null;
 let stats=null;      // leaderboard + recent results from the stats backend
 let peek=null;       // 'white' | 'color' — look-only view of the other step
+let people=[];       // who is online right now
+let catalogue=[];    // games you can play
+let curGame=null;    // which game's lobby you're in; null means the hub
 
 /* ---------- utils ---------- */
 let toastT=null;
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
-function show(v){['v-join','v-lobby','v-room'].forEach(x=>$(x).classList.remove('show'));$(v).classList.add('show');}
+function show(v){['v-join','v-hub','v-lobby','v-room'].forEach(x=>$(x).classList.remove('show'));$(v).classList.add('show');}
 function showRules(){$('rulesOverlay').classList.add('show');}
 function hideEnd(){$('endOverlay').classList.remove('show');}
 
@@ -297,20 +360,70 @@ async function enterLobby(){
   const j=await api('hello',{name:n,cid});
   if(!j.ok)return;
   cid=j.cid;sessionStorage.setItem('hg_cid',cid);
-  $('whoName').textContent=j.name;
-  lobby=j.rooms||[];renderLobby();renderLobbySetup();
+  $('whoName').textContent=j.name;$('whoNameHub').textContent=j.name;
+  curGame=j.lobby||null;
+  applyHub(j);
+  renderLobbySetup();
   stats=j.stats||null;renderStats();
   connectES();
   if(j.room){room=j.room;renderRoom();show('v-room');}
-  else show('v-lobby');
+  else if(curGame){openGame(curGame,true);}
+  else show('v-hub');
 }
 function changeName(){show('v-join');}
+
+/* ---------- hub: pick a game, see who's about ---------- */
+function applyHub(d){
+  lobby=d.rooms||[];people=d.players||[];catalogue=d.games||[];
+  renderGames();renderPeople();renderLobby();
+}
+function renderGames(){
+  const el=$('gameGrid');if(!el)return;
+  let h=catalogue.map(g=>{
+    const bits=[];
+    if(g.open)bits.push('<span class="chip open">'+g.open+' open</span>');
+    if(g.playing)bits.push('<span class="chip live">'+g.playing+' in play</span>');
+    if(g.here)bits.push('<span class="chip">'+g.here+' in lobby</span>');
+    if(!bits.length)bits.push('<span class="chip">no games yet</span>');
+    return '<button class="gamecard" onclick="openGame(\''+g.key+'\')">'
+      +'<div class="gc-top"><span class="gc-icon">'+g.icon+'</span>'
+      +'<span class="gc-name">'+esc(g.title)+'</span></div>'
+      +'<div class="gc-blurb">'+esc(g.blurb)+'</div>'
+      +'<div class="gc-meta">'+bits.join('')+'</div></button>';
+  }).join('');
+  h+='<div class="gamecard soon"><div class="gc-top"><span class="gc-icon">➕</span>'
+    +'<span class="gc-name">More coming</span></div>'
+    +'<div class="gc-blurb">New games plug into the same lobby, stats and AI.</div></div>';
+  el.innerHTML=h;
+}
+function renderPeople(){
+  const el=$('peopleList');if(!el)return;
+  if(!people.length){el.innerHTML='<div class="empty">Nobody else is here yet.</div>';return;}
+  el.innerHTML=people.map(p=>
+    '<button class="person" onclick="showPlayer(\''+encodeURIComponent(p.name)+'\')">'
+    +'<span class="dot"></span><span class="pn">'+esc(p.name)+'</span>'
+    +(p.cid===cid?'<span class="badge you">YOU</span>':'')
+    +'<span class="pw">'+esc(p.where)+'</span></button>').join('');
+}
+async function openGame(key,skipCall){
+  curGame=key;
+  const g=catalogue.filter(x=>x.key===key)[0];
+  $('lobbyTag').textContent=(g?g.icon+' '+g.title:key)+' lobby';
+  if(!skipCall)await api('lobby',{game:key});
+  renderLobby();renderLobbySetup();renderStats();
+  show('v-lobby');
+}
+async function backToHub(){
+  curGame=null;
+  await api('lobby',{game:null});
+  show('v-hub');
+}
 
 /* ---------- live events ---------- */
 function connectES(){
   if(es)es.close();
   es=new EventSource('/api/events?cid='+encodeURIComponent(cid));
-  es.addEventListener('lobby',e=>{lobby=JSON.parse(e.data).rooms;renderLobby();});
+  es.addEventListener('lobby',e=>{applyHub(JSON.parse(e.data));});
   es.addEventListener('stats',e=>{stats=JSON.parse(e.data);renderStats();renderLobbySetup();});
   es.addEventListener('room',e=>{
     const r=JSON.parse(e.data);
@@ -345,8 +458,9 @@ async function leaveRoom(){
 }
 function renderLobby(){
   const el=$('roomList');
-  if(!lobby.length){el.innerHTML='<div class="empty">No games yet — host one!</div>';return;}
-  el.innerHTML=lobby.map(r=>{
+  const mine=lobby.filter(r=>!curGame||r.game===curGame);
+  if(!mine.length){el.innerHTML='<div class="empty">No games yet — host one!</div>';return;}
+  el.innerHTML=mine.map(r=>{
     const bots=r.bots||[];
     const canJoin=r.status==='waiting'&&r.players.length<r.humans;
     const canWatch=r.status==='playing'||r.status==='ready'||r.status==='finished'||r.status==='waiting';
@@ -419,6 +533,48 @@ function renderLobbySetup(){
   $('lobbySetup').innerHTML=tableHtml('lobby',cfgHumans,cfgBots,1);
 }
 
+/* ---------- player profile ---------- */
+async function showPlayer(encName){
+  const name=decodeURIComponent(encName);
+  const j=await api('player',{name:name});
+  const box=$('playerBody');
+  if(!j.ok||!j.player){
+    box.innerHTML='<h2>'+esc(name)+'</h2><p class="sub">No games on record yet.</p>';
+  }else{
+    const p=j.player;
+    let h='<div class="prof-head"><h2 style="margin:0">'+(p.ai?'🤖 ':'')+esc(p.name)+'</h2></div>';
+    const keys=Object.keys(p.games||{});
+    if(!keys.length)h+='<p class="sub">No finished games yet.</p>';
+    keys.forEach(gk=>{
+      const g=p.games[gk];
+      h+='<div class="prof-head" style="margin-top:14px"><b>'+esc(g.title)+'</b>'
+        +'<span class="prof-elo">'+g.elo+'</span></div>';
+      if(g.rank)h+='<div class="prof-sec">Ranked <b>#'+g.rank+'</b> of '+g.of+'</div>';
+      h+='<div class="prof-grid">'
+        +'<div class="prof-stat"><b>'+g.played+'</b><span>Games</span></div>'
+        +'<div class="prof-stat"><b>'+g.wins+'&#8209;'+g.losses+'&#8209;'+g.ties+'</b><span>W-L-T</span></div>'
+        +'<div class="prof-stat"><b>'+g.best+'</b><span>Best</span></div>'
+        +'<div class="prof-stat"><b>'+g.avg+'</b><span>Avg</span></div>'
+        +'<div class="prof-stat"><b>'+streakTxt(g.streak)+'</b><span>Streak</span></div>'
+        +'<div class="prof-stat"><b>'+g.bestStreak+'</b><span>Best run</span></div>'
+        +'</div>';
+      const vs=Object.keys(g.variants||{});
+      if(vs.length)h+='<div class="prof-sec"><b>By variant:</b> '+vs.map(v=>
+        (VNAME[v]||v)+' '+g.variants[v].wins+'/'+g.variants[v].played).join(' · ')+'</div>';
+    });
+    if((p.recent||[]).length){
+      h+='<div class="prof-sec"><b>Recent games</b><br>'+p.recent.slice(0,5).map(gm=>{
+        const me=gm.players.filter(x=>x.name.toLowerCase()===p.name.toLowerCase())[0]||{};
+        const tag=me.result==='win'?'🏆':(me.result==='tie'?'=':'·');
+        return tag+' '+gm.players.map(x=>esc(x.name)+' '+x.score).join(' vs ')
+          +' <span style="color:#bbb">('+(me.eloDelta>0?'+':'')+me.eloDelta+')</span>';
+      }).join('<br>')+'</div>';
+    }
+    box.innerHTML=h;
+  }
+  $('playerOverlay').classList.add('show');
+}
+
 /* ---------- leaderboard ---------- */
 function streakTxt(s){return s>0?('🔥 '+s):(s<0?('❄ '+(-s)):'—');}
 function renderAI(){
@@ -469,7 +625,9 @@ function renderStats(){
   rows.forEach((r,i)=>{
     const mine=!r.ai&&myName&&r.name.toLowerCase()===myName.toLowerCase();
     h+='<tr'+(mine?' class="me"':'')+'><td class="rank">'+(i+1)+'</td>'
-      +'<td>'+(r.ai?'🤖 ':'')+'<b>'+esc(r.name)+'</b>'
+      +'<td><button class="link-btn" style="padding:0;text-decoration:none" '
+      +'onclick="showPlayer(\''+encodeURIComponent(r.name)+'\')">'
+      +(r.ai?'🤖 ':'')+'<b>'+esc(r.name)+'</b></button>'
       +(r.retired?' <span class="lvl">retired</span>':'')
       +'</td><td class="elo">'+r.elo+'</td>'
       +'<td>'+r.wins+'&#8209;'+r.losses+'&#8209;'+r.ties+'</td>'

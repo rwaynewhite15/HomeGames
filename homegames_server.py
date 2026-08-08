@@ -24,6 +24,7 @@ from urllib.parse import urlparse, parse_qs
 
 PORT = 4001
 BASE = os.path.dirname(os.path.abspath(__file__))
+SSE_PING = 5        # seconds; also how fast a closed tab leaves "who's here"
 
 LOCK = threading.RLock()
 CLIENTS = {}   # cid -> {'name': str, 'queues': [Queue], 'room': rid|None, 'seen': ts}
@@ -408,7 +409,10 @@ class Quixx:
         }
 
 
-GAMES = {'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx}}
+GAMES = {'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx,
+                   'icon': '🎲',
+                   'blurb': 'Roll, cross off numbers left to right, lock a row '
+                            'before anyone else. 2–4 players.'}}
 
 # ============================================================
 #  Stats backend — persisted to stats.json
@@ -1024,6 +1028,82 @@ def room_full(r):
     return d
 
 
+def presence():
+    """Who is actually here. A client counts as online only while it holds an
+    open event stream, so stale sessions drop off the list by themselves."""
+    out = []
+    for cid, c in CLIENTS.items():
+        if not c['queues']:
+            continue
+        where, rid = 'Choosing a game', None
+        r = ROOMS.get(c.get('room'))
+        if r:
+            rid = r['id']
+            if cid not in r['players']:
+                where = 'Spectating ' + GAMES[r['game']]['title']
+            elif r['status'] == 'playing':
+                where = 'Playing ' + GAMES[r['game']]['title']
+            else:
+                where = 'Waiting to start'
+        elif c.get('lobby') in GAMES:
+            where = GAMES[c['lobby']]['title'] + ' lobby'
+        out.append({'cid': cid, 'name': c['name'], 'where': where, 'room': rid})
+    out.sort(key=lambda p: p['name'].lower())
+    return out
+
+
+def games_payload():
+    out = []
+    for key, g in GAMES.items():
+        rooms = [r for r in ROOMS.values() if r['game'] == key]
+        out.append({'key': key, 'title': g['title'], 'icon': g.get('icon', '🎮'),
+                    'blurb': g.get('blurb', ''), 'min': g['min'], 'max': g['max'],
+                    'open': len([r for r in rooms if r['status'] == 'waiting']),
+                    'playing': len([r for r in rooms if r['status'] == 'playing']),
+                    'here': len([c for c in CLIENTS.values()
+                                 if c['queues'] and c.get('lobby') == key])})
+    return out
+
+
+def hub_payload():
+    return {'rooms': [room_summary(r) for r in ROOMS.values()],
+            'players': presence(), 'games': games_payload()}
+
+
+def player_detail(name):
+    """Everything known about one player, for the profile card."""
+    key = str(name or '').strip().lower()
+    pl = STATS['players'].get(key)
+    if not pl:
+        return None
+    games = {}
+    for gk, rec in (pl.get('games') or {}).items():
+        rec = normalize_record(rec)
+        if not rec['played']:
+            continue
+        board = leaderboard(gk, limit=10000)
+        rank = None
+        for i, row in enumerate(board):
+            if row['name'].lower() == key:
+                rank = i + 1
+                break
+        games[gk] = {
+            'title': GAMES[gk]['title'] if gk in GAMES else gk,
+            'elo': round(rec['elo'], 1), 'rank': rank, 'of': len(board),
+            'played': rec['played'], 'wins': rec['wins'],
+            'losses': rec['losses'], 'ties': rec['ties'],
+            'best': rec['bestScore'],
+            'avg': round(rec['pointsFor'] / rec['played'], 1),
+            'streak': rec['streak'], 'bestStreak': rec['bestStreak'],
+            'penalties': rec['penalties'], 'forfeits': rec['forfeits'],
+            'variants': rec.get('variants') or {}}
+    recent = [h for h in STATS['history']
+              if any(str(p.get('name', '')).lower() == key for p in h['players'])][:8]
+    return {'name': pl.get('name') or name, 'ai': bool(pl.get('ai')),
+            'firstSeen': pl.get('firstSeen'), 'lastPlayed': pl.get('lastPlayed'),
+            'games': games, 'recent': recent}
+
+
 def push(cid, event, data):
     c = CLIENTS.get(cid)
     if not c:
@@ -1033,7 +1113,7 @@ def push(cid, event, data):
 
 
 def broadcast_lobby():
-    data = {'rooms': [room_summary(r) for r in ROOMS.values()]}
+    data = hub_payload()
     for cid in list(CLIENTS):
         push(cid, 'lobby', data)
 
@@ -1177,10 +1257,11 @@ class Handler(BaseHTTPRequestHandler):
             c['queues'].append(q)
             c['seen'] = time.time()
             # initial snapshot
-            q.put(('lobby', {'rooms': [room_summary(r) for r in ROOMS.values()]}))
+            q.put(('lobby', hub_payload()))
             q.put(('stats', stats_payload()))
             if c['room'] and c['room'] in ROOMS:
                 q.put(('room', room_full(ROOMS[c['room']])))
+            broadcast_lobby()              # tell everyone else they arrived
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
         self.send_header('Cache-Control', 'no-store')
@@ -1188,7 +1269,10 @@ class Handler(BaseHTTPRequestHandler):
         try:
             while True:
                 try:
-                    event, data = q.get(timeout=15)
+                    # The keepalive doubles as disconnect detection: a dropped
+                    # client is only noticed when a write fails, so this
+                    # interval is how long a stale name sits in "who's here".
+                    event, data = q.get(timeout=SSE_PING)
                     payload = ('event: %s\ndata: %s\n\n'
                                % (event, json.dumps(data))).encode('utf-8')
                 except Empty:
@@ -1202,6 +1286,7 @@ class Handler(BaseHTTPRequestHandler):
                 c = CLIENTS.get(cid)
                 if c and q in c['queues']:
                     c['queues'].remove(q)
+                broadcast_lobby()          # they just dropped off the who's-here list
 
     # ---------- POST ----------
     def do_POST(self):
@@ -1229,20 +1314,29 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 cid = uuid.uuid4().hex[:12]
                 CLIENTS[cid] = {'name': name, 'queues': [], 'room': None,
-                                'seen': time.time()}
+                                'lobby': None, 'seen': time.time()}
+            CLIENTS[cid].setdefault('lobby', None)
             room = None
             if CLIENTS[cid]['room'] and CLIENTS[cid]['room'] in ROOMS:
                 room = room_full(ROOMS[CLIENTS[cid]['room']])
             broadcast_lobby()
-            self.send_json({'ok': True, 'cid': cid, 'name': name,
-                            'games': {k: {'title': v['title']} for k, v in GAMES.items()},
-                            'room': room,
-                            'rooms': [room_summary(r) for r in ROOMS.values()],
-                            'stats': stats_payload()})
+            payload = {'ok': True, 'cid': cid, 'name': name, 'room': room,
+                       'lobby': CLIENTS[cid].get('lobby'),
+                       'stats': stats_payload()}
+            payload.update(hub_payload())
+            self.send_json(payload)
             return
 
         if cmd == 'stats':
             self.send_json({'ok': True, 'stats': stats_payload()})
+            return
+
+        if cmd == 'player':
+            d = player_detail(body.get('name'))
+            if not d:
+                self.err('No record for that player yet.', 404)
+                return
+            self.send_json({'ok': True, 'player': d})
             return
 
         if cmd == 'train':
@@ -1310,6 +1404,20 @@ class Handler(BaseHTTPRequestHandler):
         if cmd == 'leave':
             leave_room(cid)
             self.send_json({'ok': True})
+            return
+
+        if cmd == 'lobby':
+            # which game's lobby this client is browsing; None means the hub
+            game = body.get('game')
+            game = str(game) if game else None
+            if game is not None and game not in GAMES:
+                self.err('Unknown game.')
+                return
+            if game is None:
+                leave_room(cid, notify=False)
+            c['lobby'] = game
+            broadcast_lobby()
+            self.send_json({'ok': True, 'lobby': game})
             return
 
         if cmd == 'rooms' and len(parts) >= 3:

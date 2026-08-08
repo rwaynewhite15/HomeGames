@@ -3,6 +3,12 @@
 A LAN game lobby you run at home. One person starts the server; everyone on the
 network opens it in a browser to host, join, or spectate games.
 
+You land in the **hub**: pick a game, and see who else is online and what they
+are doing. Tap anyone — person or bot — for their profile: rating, rank,
+win/loss record, best and average score, streaks, results by variant, and their
+recent games with the ELO swing on each. Choosing a game drops you into that
+game's own lobby, where you host, join, or spectate.
+
 First game: **Quixx** (2–4 players, humans and/or AI) with four variants —
 Standard, Mixed Colors, Mixed Numbers, and Both Mixed.
 
@@ -29,6 +35,9 @@ The console prints two addresses:
 - `homegames_server.py` — server: HTTP + Server-Sent Events lobby, rooms
   (host / join / spectate), and a server-authoritative Quixx engine so all
   clients stay in sync and nobody can mis-mark.
+  Presence is derived from open event streams rather than a timeout, so
+  "who's here" is accurate; `SSE_PING` sets how quickly a closed tab drops off
+  (a disconnect is only noticed when a keepalive write fails).
 - `index.html` — the whole client app (lobby + game UI), served by the server.
 - `stats.json` — the stats backend: lifetime records and ELO ratings, written
   by the server after every finished game.
@@ -125,7 +134,8 @@ To wipe the history, stop the server and delete `stats.json` (or reset it to
 ## Adding more games
 
 Game engines register in the `GAMES` dict in `homegames_server.py`
-(`title`, `min`/`max` players, `engine` class). An engine needs a constructor
+(`title`, `icon`, `blurb`, `min`/`max` players, `engine` class). A new entry
+appears on the hub automatically with its own lobby, room list and stats. An engine needs a constructor
 `(variant, seats)` — where each seat is `{id, name, kind, level}` — plus action
 methods and `to_dict()` for broadcasting state. The client renders by
 `state.kind`. To support AI seats, add a `bot_step()` that plays one pending AI
