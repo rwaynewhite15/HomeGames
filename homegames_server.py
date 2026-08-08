@@ -58,14 +58,28 @@ AI_NAME_POOL = ['Domino', 'Pixel', 'Rusty', 'Cobalt', 'Juniper', 'Marbles',
                 'Sable', 'Tumbler', 'Nutmeg', 'Whisker', 'Bramble', 'Fig',
                 'Otter', 'Quill', 'Pebble', 'Sprocket', 'Clover', 'Mango']
 
-# The learnable brain.
-#   skip_cost    — points charged per cell given up by marking further right
-#   late_skip    — extra charge per skipped cell as a row fills up
+# How often each number turns up on two dice, out of 36. Giving up a 2 costs
+# almost nothing — it appears once in 36 rolls — while giving up a 7 is six
+# times worse. Pricing skips by cell count instead of by probability was worth
+# about 59 ELO on its own, measured over 1200 games against a trained bot.
+NUM_FREQ = {2: 1, 3: 2, 4: 3, 5: 4, 6: 5, 7: 6, 8: 5, 9: 4, 10: 3, 11: 2, 12: 1}
+FREQ_MEAN = 36.0 / 11.0        # keeps skip_cost on roughly its old scale
+
+# The learnable brain. Kept deliberately small: five numbers is a whole bot.
+#
+# Features that only fire on rare decisions were tried and dropped — appetite
+# for ending the game while ahead, urgency about a row an opponent could lock,
+# and penalty fear that grows with your own pile. All three only apply on a
+# lock cell or a penalty turn, and none showed any effect over thousands of
+# games. The leverage is in the decision made every single turn: which cell to
+# mark, and what the skipped cells were really worth.
+#   skip_cost    — charged per unit of probability given up by marking right
+#   late_skip    — extra charge as a row fills up
 #   lock_bonus   — how much it covets the locking cell at the end of a row
 #   penalty_fear — value of dodging the −5 for an empty turn
 #   threshold    — how good a mark must look before it bothers marking at all
 WEIGHT_KEYS = ['skip_cost', 'late_skip', 'lock_bonus', 'penalty_fear', 'threshold']
-DEFAULT_WEIGHTS = {'skip_cost': 0.9, 'late_skip': 0.0, 'lock_bonus': 1.0,
+DEFAULT_WEIGHTS = {'skip_cost': 1.8, 'late_skip': 0.0, 'lock_bonus': 1.0,
                    'penalty_fear': 5.0, 'threshold': -1.5}
 BIRTH_JITTER = {'skip_cost': 0.35, 'late_skip': 0.1, 'lock_bonus': 0.3,
                 'penalty_fear': 1.5, 'threshold': 1.2}
@@ -260,12 +274,18 @@ class Quixx:
         """What an AI thinks marking (r, i) is worth, in points."""
         pl = self.players[p]
         w = pl['weights']
-        skipped = i - self.last_marked(p, r) - 1
         c = self.count(p, r)
         v = POINTS[c + 1] - POINTS[c]
         if i == 10:
             v += w['lock_bonus'] * (POINTS[min(c + 2, 12)] - POINTS[c + 1])
-        v -= (w['skip_cost'] + w['late_skip'] * c / 5.0) * skipped
+        # Price the cells given up by how likely they were to ever come back,
+        # not by how many there are. Giving up a 2 barely costs anything;
+        # giving up a 7 is six times worse.
+        lost = 0.0
+        for j in range(self.last_marked(p, r) + 1, i):
+            lost += NUM_FREQ[self.rows[r][j]['num']]
+        lost /= FREQ_MEAN
+        v -= (w['skip_cost'] + w['late_skip'] * c / 5.0) * lost
         if penalty_risk:
             v += w['penalty_fear']
         if pl['noise']:
@@ -703,6 +723,10 @@ def load_profiles():
             lo, hi = WEIGHT_BOUNDS[k]
             p['weights'][k] = min(hi, max(lo, float(p['weights'].get(k, DEFAULT_WEIGHTS[k]))))
             p['baseline'].setdefault(k, DEFAULT_WEIGHTS[k])
+        # drop weights from an experiment that has since been removed
+        for d in (p['weights'], p['baseline']):
+            for k in [k for k in d if k not in WEIGHT_KEYS]:
+                del d[k]
     data['version'] = 2
     PROFILES = data
     save_profiles()
@@ -1393,6 +1417,40 @@ class Handler(BaseHTTPRequestHandler):
         self.err('Not found', 404)
 
 
+def reset_ai():
+    """Wipe the bots' ratings and re-baseline their brains.
+
+    Ratings only mean something relative to the evaluation that earned them, so
+    after the scoring changes the old numbers are worse than useless — they
+    label a bot's difficulty wrongly. Human records and game history are left
+    completely alone."""
+    load_stats()
+    load_profiles()
+    names = set(p['name'].lower() for p in roster())
+    cleared = 0
+    for key in list(STATS['players']):
+        pl = STATS['players'][key]
+        if pl.get('ai') and key in names:
+            del STATS['players'][key]
+            cleared += 1
+    save_stats()
+    for p in roster():
+        p['baseline'] = dict(p['weights'])      # today's brain is the new yardstick
+        p['vsBaseline'] = None
+    save_profiles()
+    print('\n  Cleared ratings for %d bots; human records and history untouched.'
+          % cleared)
+    print('  Re-baselined %d brains against their current weights.' % len(roster()))
+    print('  Playing calibration games...')
+    TRAINING['running'] = True
+    calibrate()
+    TRAINING['running'] = False
+    for row in profiles_payload():
+        print('    %-12s elo %-8s %d rated games'
+              % (row['name'], row['elo'], row['played']))
+    print()
+
+
 def train_cli(rounds):
     """python homegames_server.py --train [rounds] — bulk training, no server."""
     load_stats()
@@ -1424,6 +1482,9 @@ def train_cli(rounds):
 
 def main():
     args = sys.argv[1:]
+    if args and args[0] == '--reset-ai':
+        reset_ai()
+        return
     if args and args[0] == '--train':
         try:
             rounds = int(args[1]) if len(args) > 1 else DEFAULT_ROUNDS
