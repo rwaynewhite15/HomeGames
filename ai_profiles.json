@@ -7,11 +7,11 @@
       "blunder": 0.35,
       "noise": 2.8,
       "weights": {
-        "skip_cost": 1.714,
-        "late_skip": 0.352,
-        "lock_bonus": 0.67,
-        "penalty_fear": 6.53,
-        "threshold": -4.01
+        "skip_cost": 2.144,
+        "late_skip": 0.929,
+        "lock_bonus": 1.874,
+        "penalty_fear": 5.801,
+        "threshold": -2.749
       },
       "baseline": {
         "skip_cost": 0.734,
@@ -20,12 +20,72 @@
         "penalty_fear": 3.675,
         "threshold": -1.344
       },
-      "generation": 8,
-      "trained": 10000,
-      "adopted": 8,
-      "vsBaseline": 0.585,
+      "generation": 13,
+      "trained": 20080,
+      "adopted": 13,
+      "vsBaseline": 0.723,
       "born": "2026-08-08T09:34:27-04:00",
       "history": [
+        {
+          "ts": "2026-08-08T14:21:00-04:00",
+          "generation": 13,
+          "share": 0.53,
+          "weights": {
+            "skip_cost": 2.144,
+            "late_skip": 0.929,
+            "lock_bonus": 1.874,
+            "penalty_fear": 5.801,
+            "threshold": -2.749
+          }
+        },
+        {
+          "ts": "2026-08-08T13:29:51-04:00",
+          "generation": 12,
+          "share": 0.521,
+          "weights": {
+            "skip_cost": 2.171,
+            "late_skip": 0.904,
+            "lock_bonus": 1.147,
+            "penalty_fear": 5.746,
+            "threshold": -2.949
+          }
+        },
+        {
+          "ts": "2026-08-08T13:00:31-04:00",
+          "generation": 11,
+          "share": 0.548,
+          "weights": {
+            "skip_cost": 2.296,
+            "late_skip": 0.605,
+            "lock_bonus": 1.128,
+            "penalty_fear": 6.157,
+            "threshold": -1.968
+          }
+        },
+        {
+          "ts": "2026-08-08T13:00:25-04:00",
+          "generation": 10,
+          "share": 0.555,
+          "weights": {
+            "skip_cost": 2.046,
+            "late_skip": 0.77,
+            "lock_bonus": 0.413,
+            "penalty_fear": 7.79,
+            "threshold": -2.455
+          }
+        },
+        {
+          "ts": "2026-08-08T12:59:44-04:00",
+          "generation": 9,
+          "share": 0.561,
+          "weights": {
+            "skip_cost": 1.491,
+            "late_skip": 0.627,
+            "lock_bonus": 0.432,
+            "penalty_fear": 6.232,
+            "threshold": -2.763
+          }
+        },
         {
           "ts": "2026-08-08T10:04:56-04:00",
           "generation": 8,
@@ -130,11 +190,11 @@
       "blunder": 0.268,
       "noise": 2.15,
       "weights": {
-        "skip_cost": 2.083,
-        "late_skip": 0.674,
-        "lock_bonus": 1.012,
-        "penalty_fear": 7.762,
-        "threshold": -1.588
+        "skip_cost": 2.346,
+        "late_skip": 0.836,
+        "lock_bonus": 0.802,
+        "penalty_fear": 4.409,
+        "threshold": -2.338
       },
       "baseline": {
         "skip_cost": 1.272,
@@ -143,12 +203,132 @@
         "penalty_fear": 6.649,
         "threshold": -0.742
       },
-      "generation": 11,
-      "trained": 9840,
-      "adopted": 11,
-      "vsBaseline": 0.537,
+      "generation": 21,
+      "trained": 21200,
+      "adopted": 21,
+      "vsBaseline": 0.56,
       "born": "2026-08-08T09:34:27-04:00",
       "history": [
+        {
+          "ts": "2026-08-08T13:30:55-04:00",
+          "generation": 21,
+          "share": 0.534,
+          "weights": {
+            "skip_cost": 2.346,
+            "late_skip": 0.836,
+            "lock_bonus": 0.802,
+            "penalty_fear": 4.409,
+            "threshold": -2.338
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:39-04:00",
+          "generation": 20,
+          "share": 0.582,
+          "weights": {
+            "skip_cost": 2.517,
+            "late_skip": 0.733,
+            "lock_bonus": 0.616,
+            "penalty_fear": 2.991,
+            "threshold": -2.339
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:33-04:00",
+          "generation": 19,
+          "share": 0.552,
+          "weights": {
+            "skip_cost": 2.673,
+            "late_skip": 0.713,
+            "lock_bonus": 0.615,
+            "penalty_fear": 3.066,
+            "threshold": -1.808
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:11-04:00",
+          "generation": 18,
+          "share": 0.53,
+          "weights": {
+            "skip_cost": 2.793,
+            "late_skip": 0.631,
+            "lock_bonus": 0.172,
+            "penalty_fear": 2.766,
+            "threshold": -1.23
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:08-04:00",
+          "generation": 17,
+          "share": 0.536,
+          "weights": {
+            "skip_cost": 2.534,
+            "late_skip": 0.743,
+            "lock_bonus": 0.663,
+            "penalty_fear": 2.555,
+            "threshold": -1.911
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:02-04:00",
+          "generation": 16,
+          "share": 0.523,
+          "weights": {
+            "skip_cost": 2.359,
+            "late_skip": 0.59,
+            "lock_bonus": 0.558,
+            "penalty_fear": 3.077,
+            "threshold": -1.971
+          }
+        },
+        {
+          "ts": "2026-08-08T13:29:24-04:00",
+          "generation": 15,
+          "share": 0.575,
+          "weights": {
+            "skip_cost": 2.072,
+            "late_skip": 0.789,
+            "lock_bonus": 0.813,
+            "penalty_fear": 3.87,
+            "threshold": -1.354
+          }
+        },
+        {
+          "ts": "2026-08-08T13:00:29-04:00",
+          "generation": 14,
+          "share": 0.568,
+          "weights": {
+            "skip_cost": 2.005,
+            "late_skip": 0.765,
+            "lock_bonus": 0.665,
+            "penalty_fear": 4.112,
+            "threshold": -0.918
+          }
+        },
+        {
+          "ts": "2026-08-08T13:00:03-04:00",
+          "generation": 13,
+          "share": 0.543,
+          "weights": {
+            "skip_cost": 2.091,
+            "late_skip": 0.756,
+            "lock_bonus": 0.768,
+            "penalty_fear": 5.28,
+            "threshold": -1.07
+          }
+        },
+        {
+          "ts": "2026-08-08T12:59:38-04:00",
+          "generation": 12,
+          "share": 0.527,
+          "weights": {
+            "skip_cost": 1.984,
+            "late_skip": 0.561,
+            "lock_bonus": 0.852,
+            "penalty_fear": 6.355,
+            "threshold": -1.857
+          }
+        },
         {
           "ts": "2026-08-08T10:05:00-04:00",
           "generation": 11,
@@ -289,11 +469,11 @@
       "blunder": 0.02,
       "noise": 0.2,
       "weights": {
-        "skip_cost": 1.986,
-        "late_skip": 0.823,
-        "lock_bonus": 2.08,
-        "penalty_fear": 2.887,
-        "threshold": -3.256
+        "skip_cost": 2.316,
+        "late_skip": 0.759,
+        "lock_bonus": 2.072,
+        "penalty_fear": 2.841,
+        "threshold": -3.449
       },
       "baseline": {
         "skip_cost": 0.602,
@@ -302,12 +482,48 @@
         "penalty_fear": 5.518,
         "threshold": -1.909
       },
-      "generation": 8,
-      "trained": 9520,
-      "adopted": 8,
-      "vsBaseline": 0.772,
+      "generation": 11,
+      "trained": 19600,
+      "adopted": 11,
+      "vsBaseline": 0.78,
       "born": "2026-08-08T09:34:27-04:00",
       "history": [
+        {
+          "ts": "2026-08-08T13:00:27-04:00",
+          "generation": 11,
+          "share": 0.521,
+          "weights": {
+            "skip_cost": 2.316,
+            "late_skip": 0.759,
+            "lock_bonus": 2.072,
+            "penalty_fear": 2.841,
+            "threshold": -3.449
+          }
+        },
+        {
+          "ts": "2026-08-08T12:59:42-04:00",
+          "generation": 10,
+          "share": 0.523,
+          "weights": {
+            "skip_cost": 2.44,
+            "late_skip": 0.886,
+            "lock_bonus": 1.863,
+            "penalty_fear": 2.565,
+            "threshold": -3.6
+          }
+        },
+        {
+          "ts": "2026-08-08T12:58:42-04:00",
+          "generation": 9,
+          "share": 0.564,
+          "weights": {
+            "skip_cost": 2.005,
+            "late_skip": 0.712,
+            "lock_bonus": 2.112,
+            "penalty_fear": 1.299,
+            "threshold": -2.583
+          }
+        },
         {
           "ts": "2026-08-08T10:04:48-04:00",
           "generation": 8,
@@ -412,11 +628,11 @@
       "blunder": 0.103,
       "noise": 0.85,
       "weights": {
-        "skip_cost": 1.706,
+        "skip_cost": 2.132,
         "late_skip": 0.0,
-        "lock_bonus": 0.601,
-        "penalty_fear": 5.573,
-        "threshold": -1.085
+        "lock_bonus": 0.164,
+        "penalty_fear": 5.48,
+        "threshold": -1.749
       },
       "baseline": {
         "skip_cost": 0.99,
@@ -425,12 +641,72 @@
         "penalty_fear": 5.594,
         "threshold": 1.089
       },
-      "generation": 5,
-      "trained": 9360,
-      "adopted": 5,
-      "vsBaseline": 0.588,
+      "generation": 10,
+      "trained": 19760,
+      "adopted": 10,
+      "vsBaseline": 0.635,
       "born": "2026-08-08T09:34:27-04:00",
       "history": [
+        {
+          "ts": "2026-08-08T14:21:02-04:00",
+          "generation": 10,
+          "share": 0.527,
+          "weights": {
+            "skip_cost": 2.132,
+            "late_skip": 0.0,
+            "lock_bonus": 0.164,
+            "penalty_fear": 5.48,
+            "threshold": -1.749
+          }
+        },
+        {
+          "ts": "2026-08-08T14:20:53-04:00",
+          "generation": 9,
+          "share": 0.527,
+          "weights": {
+            "skip_cost": 1.825,
+            "late_skip": 0.0,
+            "lock_bonus": 0.293,
+            "penalty_fear": 3.473,
+            "threshold": -2.101
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:46-04:00",
+          "generation": 8,
+          "share": 0.557,
+          "weights": {
+            "skip_cost": 1.991,
+            "late_skip": 0.075,
+            "lock_bonus": 0.725,
+            "penalty_fear": 3.885,
+            "threshold": -1.725
+          }
+        },
+        {
+          "ts": "2026-08-08T13:29:25-04:00",
+          "generation": 7,
+          "share": 0.566,
+          "weights": {
+            "skip_cost": 1.879,
+            "late_skip": 0.109,
+            "lock_bonus": 0.455,
+            "penalty_fear": 4.78,
+            "threshold": -1.276
+          }
+        },
+        {
+          "ts": "2026-08-08T13:00:01-04:00",
+          "generation": 6,
+          "share": 0.527,
+          "weights": {
+            "skip_cost": 1.619,
+            "late_skip": 0.0,
+            "lock_bonus": 0.633,
+            "penalty_fear": 5.258,
+            "threshold": -1.484
+          }
+        },
         {
           "ts": "2026-08-08T10:03:55-04:00",
           "generation": 5,
@@ -499,11 +775,11 @@
       "blunder": 0.185,
       "noise": 1.5,
       "weights": {
-        "skip_cost": 1.965,
-        "late_skip": 0.33,
-        "lock_bonus": 0.617,
-        "penalty_fear": 6.482,
-        "threshold": -1.599
+        "skip_cost": 2.002,
+        "late_skip": 0.0,
+        "lock_bonus": 0.425,
+        "penalty_fear": 3.515,
+        "threshold": -0.777
       },
       "baseline": {
         "skip_cost": 1.279,
@@ -512,12 +788,96 @@
         "penalty_fear": 7.038,
         "threshold": -0.078
       },
-      "generation": 5,
-      "trained": 9360,
-      "adopted": 5,
-      "vsBaseline": 0.568,
+      "generation": 12,
+      "trained": 20560,
+      "adopted": 12,
+      "vsBaseline": 0.492,
       "born": "2026-08-08T09:34:27-04:00",
       "history": [
+        {
+          "ts": "2026-08-08T13:31:00-04:00",
+          "generation": 12,
+          "share": 0.523,
+          "weights": {
+            "skip_cost": 2.002,
+            "late_skip": 0.0,
+            "lock_bonus": 0.425,
+            "penalty_fear": 3.515,
+            "threshold": -0.777
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:26-04:00",
+          "generation": 11,
+          "share": 0.579,
+          "weights": {
+            "skip_cost": 1.827,
+            "late_skip": 0.0,
+            "lock_bonus": 0.363,
+            "penalty_fear": 4.087,
+            "threshold": -1.449
+          }
+        },
+        {
+          "ts": "2026-08-08T13:30:13-04:00",
+          "generation": 10,
+          "share": 0.564,
+          "weights": {
+            "skip_cost": 1.415,
+            "late_skip": 0.07,
+            "lock_bonus": 0.709,
+            "penalty_fear": 3.552,
+            "threshold": -0.76
+          }
+        },
+        {
+          "ts": "2026-08-08T13:29:53-04:00",
+          "generation": 9,
+          "share": 0.529,
+          "weights": {
+            "skip_cost": 1.112,
+            "late_skip": 0.118,
+            "lock_bonus": 0.648,
+            "penalty_fear": 3.609,
+            "threshold": -0.25
+          }
+        },
+        {
+          "ts": "2026-08-08T13:29:20-04:00",
+          "generation": 8,
+          "share": 0.554,
+          "weights": {
+            "skip_cost": 1.563,
+            "late_skip": 0.105,
+            "lock_bonus": 0.0,
+            "penalty_fear": 4.444,
+            "threshold": -0.58
+          }
+        },
+        {
+          "ts": "2026-08-08T12:58:46-04:00",
+          "generation": 7,
+          "share": 0.543,
+          "weights": {
+            "skip_cost": 1.903,
+            "late_skip": 0.0,
+            "lock_bonus": 0.063,
+            "penalty_fear": 5.374,
+            "threshold": -1.29
+          }
+        },
+        {
+          "ts": "2026-08-08T12:58:37-04:00",
+          "generation": 6,
+          "share": 0.523,
+          "weights": {
+            "skip_cost": 1.8,
+            "late_skip": 0.04,
+            "lock_bonus": 0.317,
+            "penalty_fear": 6.225,
+            "threshold": -1.653
+          }
+        },
         {
           "ts": "2026-08-08T10:05:11-04:00",
           "generation": 5,
@@ -588,5 +948,5 @@
     "ai_9b9cb91e",
     "ai_2e8d3274"
   ],
-  "updated": "2026-08-08T11:33:03-04:00"
+  "updated": "2026-08-08T14:21:10-04:00"
 }
