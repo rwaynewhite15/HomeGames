@@ -361,6 +361,19 @@ class Quixx:
         self.end_reason = reason
         return True
 
+    def apply(self, cid, body):
+        """Dispatch one player action. Returns an error string or None."""
+        t = str(body.get('type') or '')
+        if t == 'roll':
+            return self.roll(cid)
+        if t == 'mark':
+            return self.mark(cid, body.get('row'), body.get('idx'))
+        if t == 'passWhite':
+            return self.pass_white(cid)
+        if t == 'skipColor':
+            return self.skip_color(cid)
+        return 'Unknown action.'
+
     def forfeit(self, quitter_cid):
         p = self.pidx(quitter_cid)
         self.over = True
@@ -409,10 +422,249 @@ class Quixx:
         }
 
 
-GAMES = {'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx,
-                   'icon': '🎲',
-                   'blurb': 'Roll, cross off numbers left to right, lock a row '
-                            'before anyone else. 2–4 players.'}}
+# ============================================================
+#  Mancala engine (Kalah), ported from the mancala project
+# ============================================================
+M_PITS = 6
+M_STONES = 4
+M_P1_STORE = 6
+M_P2_STORE = 13
+M_SIDE = {0: list(range(0, 6)), 1: list(range(7, 13))}
+M_STORE = {0: M_P1_STORE, 1: M_P2_STORE}
+M_OPPOSITE = {i: 12 - i for i in range(0, 6)}
+M_OPPOSITE.update({12 - i: i for i in range(0, 6)})
+
+
+def m_sow(board, player, pit):
+    """Sow one pit. Mutates `board`. Returns (extra_turn, captured)."""
+    stones = board[pit]
+    board[pit] = 0
+    idx = pit
+    skip = M_STORE[1 - player]
+    for _ in range(stones):
+        idx = (idx + 1) % 14
+        if idx == skip:
+            idx = (idx + 1) % 14
+        board[idx] += 1
+    extra = (idx == M_STORE[player])
+    captured = (idx in M_SIDE[player] and board[idx] == 1
+                and board[M_OPPOSITE[idx]] > 0)
+    if captured:
+        extra = False                      # a capture never also grants a turn
+        board[M_STORE[player]] += board[idx] + board[M_OPPOSITE[idx]]
+        board[idx] = 0
+        board[M_OPPOSITE[idx]] = 0
+    return extra, captured
+
+
+def m_sweep(board):
+    for i in M_SIDE[0]:
+        board[M_P1_STORE] += board[i]
+        board[i] = 0
+    for i in M_SIDE[1]:
+        board[M_P2_STORE] += board[i]
+        board[i] = 0
+
+
+def m_moves(board, player):
+    return [i for i in M_SIDE[player] if board[i] > 0]
+
+
+def m_search(board, player, me, depth, alpha, beta):
+    """Alpha-beta on the stone difference, the same evaluation the original
+    used. Handles Mancala's extra-turn rule: sowing into your own store
+    leaves it your move, so the node stays a maximising one."""
+    moves = m_moves(board, player)
+    if depth <= 0 or not moves:
+        if not moves:
+            b = board[:]
+            m_sweep(b)
+            return b[M_STORE[me]] - b[M_STORE[1 - me]]
+        return board[M_STORE[me]] - board[M_STORE[1 - me]]
+    maximizing = (player == me)
+    best = -10 ** 6 if maximizing else 10 ** 6
+    for pit in moves:
+        b = board[:]
+        extra, _ = m_sow(b, player, pit)
+        nxt = player if extra else 1 - player
+        val = m_search(b, nxt, me, depth - 1, alpha, beta)
+        if maximizing:
+            best = max(best, val)
+            alpha = max(alpha, best)
+        else:
+            best = min(best, val)
+            beta = min(beta, best)
+        if beta <= alpha:
+            break
+    return best
+
+
+class Mancala:
+    """Two-player Kalah. Six pits a side, four stones each, sown
+    counter-clockwise past your own store but never the opponent's."""
+
+    def __init__(self, variant, seats):
+        self.variant = variant
+        self.players = [{'cid': s['id'], 'name': s['name'],
+                         'kind': s.get('kind', 'human'),
+                         'profile': s.get('profile'),
+                         'blunder': float(s.get('blunder') or 0.0)}
+                        for s in seats]
+        self.board = [M_STONES] * 14
+        self.board[M_P1_STORE] = 0
+        self.board[M_P2_STORE] = 0
+        self.active = 0
+        self.over = False
+        self.end_reason = None
+        self.forfeit_idx = None
+        self.last = None
+        self.log = []
+
+    # ---- helpers ----
+    def pidx(self, cid):
+        for i, p in enumerate(self.players):
+            if p['cid'] == cid:
+                return i
+        return None
+
+    def note(self, text):
+        self.log.append(text)
+        del self.log[:-8]
+
+    def valid_moves(self, p=None):
+        if self.over:
+            return []
+        return m_moves(self.board, self.active if p is None else p)
+
+    def total(self, p):
+        return self.board[M_STORE[p]]
+
+    # ---- actions ----
+    def apply(self, cid, body):
+        if str(body.get('type') or '') != 'sow':
+            return 'Unknown action.'
+        return self.sow(cid, body.get('pit'))
+
+    def sow(self, cid, pit):
+        p = self.pidx(cid)
+        if self.over:
+            return 'The game is over.'
+        if p is None or p != self.active:
+            return "It's not your turn."
+        try:
+            pit = int(pit)
+        except (TypeError, ValueError):
+            return 'Invalid pit.'
+        if pit not in M_SIDE[p]:
+            return 'That is not your pit.'
+        if self.board[pit] <= 0:
+            return 'That pit is empty.'
+
+        extra, captured = m_sow(self.board, p, pit)
+        name = self.players[p]['name']
+        self.last = {'player': p, 'pit': pit, 'extra': extra, 'captured': captured}
+        self.note('%s sowed pit %d%s' % (name, M_SIDE[p].index(pit) + 1,
+                                         ' — capture!' if captured else
+                                         (' — goes again' if extra else '')))
+        # either side emptying ends it; so does the mover having nothing left
+        if not m_moves(self.board, 0) or not m_moves(self.board, 1):
+            self.finish()
+        elif not extra:
+            self.active = 1 - p
+            if not self.valid_moves():
+                self.finish()
+        elif not self.valid_moves():
+            self.finish()
+
+    def finish(self):
+        m_sweep(self.board)
+        self.over = True
+        a, b = self.board[M_P1_STORE], self.board[M_P2_STORE]
+        if a == b:
+            self.end_reason = 'A tie — %d stones each.' % a
+        else:
+            win = self.players[0 if a > b else 1]['name']
+            self.end_reason = '%s wins %d–%d.' % (win, max(a, b), min(a, b))
+
+    def forfeit(self, quitter_cid):
+        p = self.pidx(quitter_cid)
+        self.over = True
+        self.forfeit_idx = p
+        quitn = self.players[p]['name'] if p is not None else '?'
+        if p is not None:
+            self.end_reason = ('%s left — %s wins by forfeit.'
+                               % (quitn, self.players[1 - p]['name']))
+        else:
+            self.end_reason = '%s left — the game ended early.' % quitn
+
+    # ---- AI ----
+    def depth_for(self, p):
+        """Search depth from the bot's carelessness, so a bot plays at the
+        same relative strength here as it does anywhere else."""
+        return max(1, min(7, int(round(6.5 - 15.0 * self.players[p]['blunder']))))
+
+    def bot_step(self):
+        if self.over:
+            return False
+        p = self.active
+        if self.players[p]['kind'] != 'ai':
+            return False
+        moves = self.valid_moves()
+        if not moves:
+            self.finish()
+            return False
+        if self.players[p]['blunder'] and random.random() < self.players[p]['blunder']:
+            pick = random.choice(moves)
+        else:
+            depth = self.depth_for(p)
+            best, pick = None, moves[0]
+            for pit in moves:
+                b = self.board[:]
+                extra, _ = m_sow(b, p, pit)
+                nxt = p if extra else 1 - p
+                val = m_search(b, nxt, p, depth - 1, -10 ** 6, 10 ** 6)
+                if best is None or val > best:
+                    best, pick = val, pit
+        self.sow(self.players[p]['cid'], pick)
+        return True
+
+    # ---- payloads ----
+    def result_summary(self):
+        return {
+            'game': 'mancala', 'variant': self.variant, 'reason': self.end_reason,
+            'players': [{'name': p['name'], 'score': self.total(i), 'penalties': 0,
+                         'kind': p['kind'], 'profile': p['profile'],
+                         'forfeited': i == self.forfeit_idx}
+                        for i, p in enumerate(self.players)],
+        }
+
+    def to_dict(self):
+        return {
+            'kind': 'mancala', 'variant': self.variant, 'board': self.board,
+            'players': [{'cid': p['cid'], 'name': p['name'], 'kind': p['kind'],
+                         'profile': p['profile'], 'total': self.total(i),
+                         'pits': M_SIDE[i], 'store': M_STORE[i]}
+                        for i, p in enumerate(self.players)],
+            'active': self.active, 'over': self.over, 'reason': self.end_reason,
+            'last': self.last, 'log': self.log[-5:],
+            'valid': [self.valid_moves(0) if self.active == 0 and not self.over else [],
+                      self.valid_moves(1) if self.active == 1 and not self.over else []],
+        }
+
+
+GAMES = {
+    'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx,
+              'icon': '🎲', 'variants': VARIANTS,
+              'vnames': {'standard': 'Standard', 'colors': 'Mixed Colors',
+                         'numbers': 'Mixed Numbers', 'both': 'Both Mixed'},
+              'blurb': 'Roll, cross off numbers left to right, lock a row '
+                       'before anyone else. 2–4 players.'},
+    'mancala': {'title': 'Mancala', 'min': 2, 'max': 2, 'engine': Mancala,
+                'icon': '🫘', 'variants': {'standard'},
+                'vnames': {'standard': 'Kalah'},
+                'blurb': 'Sow stones around the board, capture from an empty '
+                         'pit, finish with the fullest store. 2 players.'},
+}
 
 # ============================================================
 #  Stats backend — persisted to stats.json
@@ -930,15 +1182,17 @@ def train_worker(rounds, ladder):
 def profiles_payload():
     """The AI roster with the rating each has actually earned — no difficulty
     labels, the ELO is the difficulty."""
-    rated = {}
-    for key, pl in STATS['players'].items():
-        rec = (pl.get('games') or {}).get('quixx')
-        if rec and rec.get('played'):
-            rated[key] = (round(rec['elo'], 1), rec['played'])
     out = []
     for p in roster():
-        elo, played = rated.get(p['name'].lower(), (None, 0))
-        out.append({'id': p['id'], 'name': p['name'], 'elo': elo, 'played': played,
+        pl = STATS['players'].get(p['name'].lower()) or {}
+        elos, played = {}, {}
+        for gk, rec in (pl.get('games') or {}).items():
+            if rec.get('played'):
+                elos[gk] = round(rec['elo'], 1)
+                played[gk] = rec['played']
+        out.append({'id': p['id'], 'name': p['name'],
+                    'elos': elos, 'plays': played,
+                    'elo': elos.get('quixx'), 'played': played.get('quixx', 0),
                     'generation': p['generation'], 'trained': p['trained'],
                     'adopted': p['adopted'], 'vsBaseline': p.get('vsBaseline'),
                     'weights': p['weights']})
@@ -984,8 +1238,9 @@ def refresh_status(r):
                    else 'waiting')
 
 
-def parse_table(body, joined):
-    """Validate a humans + AI table setup. Raises ValueError with a message."""
+def parse_table(body, joined, cap=MAX_SEATS):
+    """Validate a humans + AI table setup against the game's own seat limit.
+    Raises ValueError with a message."""
     try:
         humans = int(body.get('humans', 2))
     except (TypeError, ValueError):
@@ -999,12 +1254,12 @@ def parse_table(body, joined):
     for pid in picks:
         if pid not in PROFILES['profiles']:
             raise ValueError('Unknown AI player.')
-    if humans < 1 or humans > MAX_SEATS:
-        raise ValueError('Humans must be between 1 and %d.' % MAX_SEATS)
+    if humans < 1 or humans > cap:
+        raise ValueError('Humans must be between 1 and %d.' % cap)
     if humans < joined:
         raise ValueError('%d players have already joined.' % joined)
-    if humans + len(picks) > MAX_SEATS:
-        raise ValueError('That is more than %d seats.' % MAX_SEATS)
+    if humans + len(picks) > cap:
+        raise ValueError('This game seats %d.' % cap)
     if humans + len(picks) < 2:
         raise ValueError('A game needs at least 2 seats.')
     return humans, picks
@@ -1058,6 +1313,8 @@ def games_payload():
         rooms = [r for r in ROOMS.values() if r['game'] == key]
         out.append({'key': key, 'title': g['title'], 'icon': g.get('icon', '🎮'),
                     'blurb': g.get('blurb', ''), 'min': g['min'], 'max': g['max'],
+                    'variants': sorted(g.get('variants', VARIANTS)),
+                    'vnames': g.get('vnames', {}),
                     'open': len([r for r in rooms if r['status'] == 'waiting']),
                     'playing': len([r for r in rooms if r['status'] == 'playing']),
                     'here': len([c for c in CLIENTS.values()
@@ -1378,11 +1635,11 @@ class Handler(BaseHTTPRequestHandler):
             if game not in GAMES:
                 self.err('Unknown game.')
                 return
-            if variant not in VARIANTS:
+            if variant not in GAMES[game].get('variants', VARIANTS):
                 self.err('Unknown variant.')
                 return
             try:
-                humans, levels = parse_table(body, 1)
+                humans, levels = parse_table(body, 1, GAMES[game]['max'])
             except ValueError as e:
                 self.err(str(e))
                 return
@@ -1463,7 +1720,8 @@ class Handler(BaseHTTPRequestHandler):
                     self.err('Finish the game before changing the table.')
                     return
                 try:
-                    humans, levels = parse_table(body, len(r['players']))
+                    humans, levels = parse_table(body, len(r['players']),
+                                                 GAMES[r['game']]['max'])
                 except ValueError as e:
                     self.err(str(e))
                     return
@@ -1499,18 +1757,8 @@ class Handler(BaseHTTPRequestHandler):
                 if r['status'] != 'playing' or not r['engine']:
                     self.err('Game is not in progress.')
                     return
-                g = r['engine']
-                t = str(body.get('type') or '')
-                if t == 'roll':
-                    e = g.roll(cid)
-                elif t == 'mark':
-                    e = g.mark(cid, body.get('row'), body.get('idx'))
-                elif t == 'passWhite':
-                    e = g.pass_white(cid)
-                elif t == 'skipColor':
-                    e = g.skip_color(cid)
-                else:
-                    e = 'Unknown action.'
+                # each engine owns its own verbs
+                e = r['engine'].apply(cid, body)
                 if e:
                     self.err(e)
                     return

@@ -9,8 +9,15 @@ win/loss record, best and average score, streaks, results by variant, and their
 recent games with the ELO swing on each. Choosing a game drops you into that
 game's own lobby, where you host, join, or spectate.
 
-First game: **Quixx** (2–4 players, humans and/or AI) with four variants —
-Standard, Mixed Colors, Mixed Numbers, and Both Mixed.
+Games so far:
+
+- **Quixx** — 2–4 players, four variants (Standard, Mixed Colors, Mixed
+  Numbers, Both Mixed).
+- **Mancala** — 2 players, standard Kalah. Ported from the `mancala` project;
+  the rules were checked move-for-move against the original over 400 games.
+
+Each game keeps its own leaderboard and ELO, so a bot can be strong at one and
+weak at another.
 
 ## Requirements
 
@@ -134,8 +141,24 @@ To wipe the history, stop the server and delete `stats.json` (or reset it to
 ## Adding more games
 
 Game engines register in the `GAMES` dict in `homegames_server.py`
-(`title`, `icon`, `blurb`, `min`/`max` players, `engine` class). A new entry
-appears on the hub automatically with its own lobby, room list and stats. An engine needs a constructor
+(`title`, `icon`, `blurb`, `variants`, `min`/`max` players, `engine` class). A
+new entry appears on the hub automatically with its own lobby, room list,
+leaderboard and ELO.
+
+An engine needs:
+
+| Member | Purpose |
+|---|---|
+| `__init__(variant, seats)` | seats are `{id, name, kind, profile, …}` |
+| `apply(cid, body)` | handle one action, return an error string or `None` |
+| `to_dict()` | state to broadcast; `kind` selects the client renderer |
+| `bot_step()` | play one pending AI move, `False` when waiting on a human |
+| `result_summary()` | final scores, so the game lands on the leaderboard |
+| `forfeit(cid)`, `over`, `total(i)` | shared lifecycle |
+
+AI seats carry a `blunder` rate. Quixx turns it into random moves alongside
+learned weights; Mancala turns it into search depth, so a bot plays at roughly
+its usual relative strength in either game. An engine needs a constructor
 `(variant, seats)` — where each seat is `{id, name, kind, level}` — plus action
 methods and `to_dict()` for broadcasting state. The client renders by
 `state.kind`. To support AI seats, add a `bot_step()` that plays one pending AI

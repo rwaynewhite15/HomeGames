@@ -166,6 +166,22 @@
   .pen-box{width:26px;height:26px;border:2px solid #bbb;border-radius:6px;display:inline-flex;align-items:center;justify-content:center;font-weight:700;color:var(--red);}
   .score-pill{margin-left:auto;background:var(--ink);color:#fff;border-radius:20px;padding:5px 14px;font-weight:700;}
 
+  /* mancala */
+  .mboard{display:flex;align-items:stretch;gap:10px;background:#8b5e34;border-radius:20px;
+    padding:14px;margin-bottom:14px;box-shadow:inset 0 2px 8px rgba(0,0,0,.25);}
+  .mstore{width:74px;flex:none;background:#6f4826;border-radius:16px;display:flex;
+    flex-direction:column;align-items:center;justify-content:center;gap:4px;color:#fff;
+    box-shadow:inset 0 3px 8px rgba(0,0,0,.35);padding:6px;}
+  .mstore-n{font-size:1.8em;font-weight:700;}
+  .mstore-l{font-size:.66em;opacity:.85;text-align:center;line-height:1.2;word-break:break-word;}
+  .mpits{flex:1;display:flex;flex-direction:column;gap:10px;justify-content:center;}
+  .mrow{display:flex;gap:8px;}
+  .pit{flex:1;aspect-ratio:1/1;background:#6f4826;border-radius:50%;display:flex;
+    align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:1.2em;
+    box-shadow:inset 0 3px 8px rgba(0,0,0,.35);border:3px solid transparent;}
+  .pit.pickable{cursor:pointer;border-color:#ffd76e;animation:pulse 1s infinite;}
+  .pit.theirs{border-color:rgba(255,255,255,.25);}
+
   /* waiting room */
   .wait-box{text-align:center;padding:30px 10px;}
   .wait-box .spin{font-size:2.4em;animation:bob 1.4s infinite;}
@@ -229,16 +245,11 @@
   </div>
 
   <div class="panel">
-    <h3>Host a game — Quixx</h3>
-    <div class="variants" id="variantGrid">
-      <button class="variant sel" data-v="standard"><b>Standard</b><span>Classic rows: red &amp; yellow 2→12, green &amp; blue 12→2.</span></button>
-      <button class="variant" data-v="colors"><b>Mixed Colors</b><span>Numbers in order, cell colors scrambled.</span></button>
-      <button class="variant" data-v="numbers"><b>Mixed Numbers</b><span>One color per row, numbers scrambled.</span></button>
-      <button class="variant" data-v="both"><b>Both Mixed</b><span>Scrambled numbers AND colors. Chaos mode.</span></button>
-    </div>
+    <h3 id="hostHead">Host a game</h3>
+    <div class="variants" id="variantGrid"></div>
     <div id="lobbySetup"></div>
     <button class="big-btn" onclick="createRoom()">Host Game</button>
-    <button class="link-btn" onclick="showRules()">How to play Quixx</button>
+    <button class="link-btn" onclick="showRules()" id="rulesLink">How to play</button>
   </div>
 
   <div class="panel">
@@ -288,7 +299,17 @@
 </div>
 
 <div class="overlay" id="rulesOverlay" onclick="if(event.target===this)this.classList.remove('show')">
-  <div class="modal rules">
+  <div class="modal rules" id="rulesMancala" style="display:none">
+    <h2>How to play Mancala</h2>
+    <p><b>The board:</b> six pits each, four stones in every pit, and a store at your right-hand end.</p>
+    <p><b>Your turn:</b> pick one of your own pits and sow its stones one at a time, counter-clockwise. You drop a stone in your own store as you pass it, but never in your opponent's.</p>
+    <p><b>Go again:</b> if your last stone lands in your own store, you take another turn.</p>
+    <p><b>Capture:</b> if your last stone lands in an empty pit on <i>your</i> side and the pit opposite has stones, you take that stone and all the ones opposite straight into your store. A capture never also gives you another turn.</p>
+    <p><b>Game over:</b> when either side is empty, the other player sweeps their remaining stones into their own store. Most stones wins.</p>
+    <p style="color:#777;font-size:.85em">The bots search ahead — the higher their rating, the deeper they look.</p>
+    <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
+  </div>
+  <div class="modal rules" id="rulesQuixx">
     <h2>How to play Quixx</h2>
     <p><b>On your turn</b>, roll all dice. Two things happen, in order:</p>
     <p><b>1. White dice (everyone):</b> Both players may mark one cell equal to the sum of the two white dice — in any row, any color cell.</p>
@@ -312,6 +333,13 @@
 const $=id=>document.getElementById(id);
 const CNAME={red:'Red',yellow:'Yellow',green:'Green',blue:'Blue'};
 const VNAME={standard:'Standard',colors:'Mixed Colors',numbers:'Mixed Numbers',both:'Both Mixed'};
+const VDESC={
+  quixx:{standard:'Classic rows: red &amp; yellow 2→12, green &amp; blue 12→2.',
+         colors:'Numbers in order, cell colors scrambled.',
+         numbers:'One color per row, numbers scrambled.',
+         both:'Scrambled numbers AND colors. Chaos mode.'},
+  mancala:{standard:'Six pits a side, four stones each. Land in your store to go again.'}
+};
 const COLORS=['red','yellow','green','blue'];
 const MAX_SEATS=4;
 let cfgHumans=2,cfgBots=[];   // table setup for the next game you host
@@ -336,7 +364,12 @@ let toastT=null;
 function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),2400);}
 function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 function show(v){['v-join','v-hub','v-lobby','v-room'].forEach(x=>$(x).classList.remove('show'));$(v).classList.add('show');}
-function showRules(){$('rulesOverlay').classList.add('show');}
+function showRules(){
+  const gk=(room&&room.game)||curGame||'quixx';
+  $('rulesQuixx').style.display=(gk==='quixx')?'':'none';
+  $('rulesMancala').style.display=(gk==='mancala')?'':'none';
+  $('rulesOverlay').classList.add('show');
+}
 function hideEnd(){$('endOverlay').classList.remove('show');}
 
 async function api(path,body){
@@ -405,12 +438,35 @@ function renderPeople(){
     +(p.cid===cid?'<span class="badge you">YOU</span>':'')
     +'<span class="pw">'+esc(p.where)+'</span></button>').join('');
 }
+function gameDef(key){return catalogue.filter(x=>x.key===(key||curGame))[0]||null;}
+function vname(gk,v){
+  const g=gameDef(gk);
+  return (g&&g.vnames&&g.vnames[v])||VNAME[v]||v;
+}
+function renderVariants(){
+  const g=gameDef(),el=$('variantGrid');
+  if(!el)return;
+  const vs=(g&&g.variants)||['standard'];
+  if(vs.indexOf(variant)<0)variant=vs[0];
+  const desc=(VDESC[curGame]||{});
+  el.innerHTML=vs.map(v=>'<button class="variant'+(v===variant?' sel':'')+'" data-v="'+v+'">'
+    +'<b>'+esc(vname(curGame,v))+'</b><span>'+(desc[v]||'')+'</span></button>').join('');
+  el.querySelectorAll('.variant').forEach(b=>{
+    b.onclick=()=>{variant=b.dataset.v;renderVariants();};
+  });
+  if(g){
+    $('hostHead').textContent='Host a game — '+g.title;
+    $('rulesLink').textContent='How to play '+g.title;
+    if(cfgHumans>g.max)cfgHumans=g.max;
+    if(cfgHumans+cfgBots.length>g.max)cfgBots=cfgBots.slice(0,Math.max(0,g.max-cfgHumans));
+  }
+}
 async function openGame(key,skipCall){
   curGame=key;
-  const g=catalogue.filter(x=>x.key===key)[0];
+  const g=gameDef(key);
   $('lobbyTag').textContent=(g?g.icon+' '+g.title:key)+' lobby';
   if(!skipCall)await api('lobby',{game:key});
-  renderLobby();renderLobbySetup();renderStats();
+  renderVariants();renderLobby();renderLobbySetup();renderStats();
   show('v-lobby');
 }
 async function backToHub(){
@@ -435,12 +491,8 @@ function connectES(){
 }
 
 /* ---------- lobby ---------- */
-document.querySelectorAll('#variantGrid .variant').forEach(b=>{
-  b.onclick=()=>{document.querySelectorAll('#variantGrid .variant').forEach(x=>x.classList.remove('sel'));
-    b.classList.add('sel');variant=b.dataset.v;};
-});
 async function createRoom(){
-  const j=await api('rooms',{game:'quixx',variant,humans:cfgHumans,bots:cfgBots});
+  const j=await api('rooms',{game:curGame||'quixx',variant,humans:cfgHumans,bots:cfgBots});
   if(j.ok){room=j.room;endShownFor=null;renderRoom();show('v-room');}
 }
 async function joinRoom(id){
@@ -468,7 +520,7 @@ function renderLobby(){
     return '<div class="room-line">'
       +'<span class="status-pill '+r.status+'">'+r.status.toUpperCase()+'</span>'
       +'<span class="rname">'+esc(r.name)+'</span>'
-      +'<span class="meta">'+VNAME[r.variant]+' · '+esc(seated.join(', ')||'—')
+      +'<span class="meta">'+esc(vname(r.game,r.variant))+' · '+esc(seated.join(', ')||'—')
       +' · '+seated.length+'/'+(r.humans+bots.length)+' seats'
       +(r.spectators?' · 👀 '+r.spectators:'')+'</span>'
       +'<span class="spacer"></span>'
@@ -479,7 +531,13 @@ function renderLobby(){
 }
 
 /* ---------- the AI roster ---------- */
-function aiRoster(){return (stats&&stats.profiles)||[];}
+function aiRoster(){
+  const g=curGame||'quixx';
+  return ((stats&&stats.profiles)||[]).map(p=>{
+    const e=(p.elos||{})[g];
+    return Object.assign({},p,{elo:e==null?null:e,played:(p.plays||{})[g]||0});
+  }).sort((a,b)=>(a.elo==null)-(b.elo==null)||(b.elo||0)-(a.elo||0));
+}
 function aiById(id){return aiRoster().filter(p=>p.id===id)[0]||null;}
 function eloTxt(p){return p&&p.elo!=null?p.elo:'unrated';}
 
@@ -493,27 +551,29 @@ function tableApply(ns,humans,bots){
   if(ns==='lobby'){cfgHumans=humans;cfgBots=bots;renderLobbySetup();}
   else api('rooms/'+room.id+'/config',{humans:humans,bots:bots});
 }
+function seatCap(){return (gameDef()||{}).max||MAX_SEATS;}
 function tblHumans(ns,d){
-  const c=tableCfg(ns),h=c.humans+d;
-  if(h<1||h>MAX_SEATS||h+c.bots.length>MAX_SEATS)return;
+  const c=tableCfg(ns),h=c.humans+d,cap=seatCap();
+  if(h<1||h>cap||h+c.bots.length>cap)return;
   tableApply(ns,h,c.bots);
 }
 function tblAdd(ns,lv){
   const c=tableCfg(ns);
-  if(c.humans+c.bots.length>=MAX_SEATS)return;
+  if(c.humans+c.bots.length>=seatCap())return;
   c.bots.push(lv);tableApply(ns,c.humans,c.bots);
 }
 function tblDel(ns,i){
   const c=tableCfg(ns);c.bots.splice(i,1);tableApply(ns,c.humans,c.bots);
 }
 function tableHtml(ns,humans,bots,joined){
-  const total=humans+bots.length,full=total>=MAX_SEATS;
+  const cap=(gameDef()||{}).max||MAX_SEATS;
+  const total=humans+bots.length,full=total>=cap;
   let h='<div class="table-setup">';
   h+='<div class="tsrow"><span class="tslabel">👤 Humans</span>'
     +'<button class="step" onclick="tblHumans(\''+ns+'\',-1)"'+(humans<=Math.max(1,joined)?' disabled':'')+'>−</button>'
     +'<b class="tsnum">'+humans+'</b>'
-    +'<button class="step" onclick="tblHumans(\''+ns+'\',1)"'+(full||humans>=MAX_SEATS?' disabled':'')+'>+</button>'
-    +'<span class="tsseats">'+total+' of '+MAX_SEATS+' seats</span></div>';
+    +'<button class="step" onclick="tblHumans(\''+ns+'\',1)"'+(full||humans>=cap?' disabled':'')+'>+</button>'
+    +'<span class="tsseats">'+total+' of '+cap+' seats</span></div>';
   const rost=aiRoster();
   h+='<div class="tsrow"><span class="tslabel">🤖 Add AI</span>';
   if(!rost.length)h+='<span class="lvl">no AI available yet</span>';
@@ -560,7 +620,7 @@ async function showPlayer(encName){
         +'</div>';
       const vs=Object.keys(g.variants||{});
       if(vs.length)h+='<div class="prof-sec"><b>By variant:</b> '+vs.map(v=>
-        (VNAME[v]||v)+' '+g.variants[v].wins+'/'+g.variants[v].played).join(' · ')+'</div>';
+        esc(vname(gk,v))+' '+g.variants[v].wins+'/'+g.variants[v].played).join(' · ')+'</div>';
     });
     if((p.recent||[]).length){
       h+='<div class="prof-sec"><b>Recent games</b><br>'+p.recent.slice(0,5).map(gm=>{
@@ -600,12 +660,16 @@ function renderAI(){
       +'<div class="recent">Training — round '+(t.round||0)+' of '+(t.rounds||'?')
       +(t.who?' · '+esc(t.who):'')+' · '+(t.games||0).toLocaleString()+' games played '
       +'<button class="link-btn" onclick="stopTraining()">stop</button></div>';
-  }else{
+  }else if((curGame||'quixx')==='quixx'){
     h+='<div class="tsrow" style="margin-top:12px"><span class="tslabel">Self-play</span>'
       +'<input id="trainRounds" type="number" min="1" max="200" value="30" '
       +'style="width:64px;padding:6px;border:1px solid #ccc;border-radius:8px">'
       +'<span class="lvl">rounds</span>'
       +'<button class="small-btn" onclick="startTraining()">Train the AI</button></div>';
+  }else{
+    h+='<div class="recent">These bots play '+esc((gameDef()||{}).title||'this game')
+      +' by search, not by trained weights — their rating here is earned in real games. '
+      +'Self-play training is Quixx-only for now.</div>';
   }
   if(t.log&&t.log.length)h+='<div class="recent">'+t.log.map(esc).join('<br>')+'</div>';
   el.innerHTML=h;
@@ -618,7 +682,7 @@ async function stopTraining(){await api('train',{stop:true});}
 function renderStats(){
   const el=$('statsPanel');if(!el)return;
   renderAI();
-  const rows=(stats&&stats.leaderboard&&stats.leaderboard.quixx)||[];
+  const rows=(stats&&stats.leaderboard&&stats.leaderboard[curGame||'quixx'])||[];
   if(!rows.length){el.innerHTML='<div class="empty">No finished games yet — play one!</div>';return;}
   let h='<table class="lb"><tr><th class="rank">#</th><th>Player</th><th>ELO</th>'
     +'<th>W&#8209;L&#8209;T</th><th>Best</th><th>Avg</th><th>Streak</th></tr>';
@@ -663,7 +727,7 @@ async function rematch(){hideEnd();endShownFor=null;await api('rooms/'+room.id+'
 
 function renderRoom(){
   if(!room)return;
-  $('roomTag').textContent=room.gameTitle+' · '+VNAME[room.variant];
+  $('roomTag').textContent=room.gameTitle+' · '+vname(room.game,room.variant);
   $('spectBanner').style.display=isSpectator()?'':'none';
   const body=$('roomBody');
   const g=room.state;
@@ -700,6 +764,7 @@ function renderRoom(){
 
   // ----- game view -----
   const me=myIdx();
+  if(g.kind==='mancala'){renderMancala(g,me,body);return;}
   const rollKey=g.dice?JSON.stringify(g.dice):null;
   const justRolled=rollKey&&rollKey!==lastRollKey;
   lastRollKey=rollKey;
@@ -787,6 +852,66 @@ function peekHtml(g,me){
     +(other==='white'?'white sum ('+(g.dice.w1+g.dice.w2)+')':'color-dice')
     +' options still open to you — look only, not clickable.</div>';
   return h;
+}
+
+/* ---------- Mancala ---------- */
+function mancalaAct(pit){act('sow',{pit:pit});}
+function renderMancala(g,me,body){
+  const seat=me>=0?me:0;                 // spectators watch from player 1's side
+  const opp=1-seat;
+  const mine=g.players[seat],theirs=g.players[opp];
+  const myTurn=(me>=0&&g.active===me&&!g.over);
+  const valid=myTurn?(g.valid[me]||[]):[];
+
+  let h='<div class="dice-tray">';
+  if(g.over){
+    h+='<div class="phase-msg">Game over</div><div class="phase-sub">'+esc(g.reason||'')+'</div>';
+  }else{
+    h+='<div class="phase-msg">'+(g.active===me?'Your turn':esc(g.players[g.active].name)+"'s turn")+'</div>';
+    h+='<div class="phase-sub">'+(myTurn?'Pick one of your pits — landing in your store means you go again.'
+      :'Waiting…')+'</div>';
+  }
+  if(g.log&&g.log.length)
+    h+='<div class="movelog">'+g.log.slice(-4).map(esc).join(' &nbsp;·&nbsp; ')+'</div>';
+  h+='</div>';
+
+  // opponent's pits run right-to-left above yours, the way a real board sits
+  const oppPits=theirs.pits.slice().reverse();
+  h+='<div class="mboard">';
+  h+='<div class="mstore opp"><div class="mstore-n">'+g.board[theirs.store]+'</div>'
+    +'<div class="mstore-l">'+esc(theirs.name)+(theirs.kind==='ai'?' 🤖':'')+'</div></div>';
+  h+='<div class="mpits">';
+  h+='<div class="mrow">'+oppPits.map(i=>
+    '<div class="pit'+(g.active===opp&&!g.over?' theirs':'')+'">'
+    +'<span>'+g.board[i]+'</span></div>').join('')+'</div>';
+  h+='<div class="mrow">'+mine.pits.map(i=>{
+    const ok=valid.indexOf(i)>=0;
+    return '<div class="pit'+(ok?' pickable':'')+'"'
+      +(ok?' onclick="mancalaAct('+i+')"':'')+'><span>'+g.board[i]+'</span></div>';
+  }).join('')+'</div>';
+  h+='</div>';
+  h+='<div class="mstore you"><div class="mstore-n">'+g.board[mine.store]+'</div>'
+    +'<div class="mstore-l">'+esc(mine.name)+(me>=0?' (you)':'')+'</div></div>';
+  h+='</div>';
+
+  h+='<div class="sheet-foot"><span style="color:#777">Stones in store:</span>'
+    +'<span class="score-pill">'+esc(mine.name)+' '+g.board[mine.store]+'</span>'
+    +'<span class="score-pill" style="background:#8a8a8a">'+esc(theirs.name)+' '+g.board[theirs.store]+'</span></div>';
+  body.innerHTML=h;
+
+  if(g.over&&endShownFor!==room.id+g.reason){
+    endShownFor=room.id+g.reason;
+    const ranked=g.players.slice().sort((a,b)=>b.total-a.total);
+    const tie=ranked[0].total===ranked[1].total;
+    $('endTitle').innerHTML=(g.reason&&g.reason.indexOf(' left ')>=0)?'🏁 Game ended early'
+      :(tie?"It's a tie!":'🏆 '+(ranked[0].kind==='ai'?'🤖 ':'')+esc(ranked[0].name)+' wins!');
+    $('endReason').textContent=g.reason||'';
+    $('endScores').innerHTML=ranked.map((p,i)=>
+      '<div><span>'+(i+1)+'. '+(p.kind==='ai'?'🤖 ':'')+'<b>'+esc(p.name)+'</b></span>'
+      +'<b>'+p.total+'</b></div>').join('');
+    $('rematchBtn').style.display=isHost()?'':'none';
+    $('endOverlay').classList.add('show');
+  }
 }
 
 function boardHtml(g,pi,me){
