@@ -470,24 +470,62 @@ def m_moves(board, player):
     return [i for i in M_SIDE[player] if board[i] > 0]
 
 
-def m_search(board, player, me, depth, alpha, beta):
-    """Alpha-beta on the stone difference, the same evaluation the original
-    used. Handles Mancala's extra-turn rule: sowing into your own store
-    leaves it your move, so the node stays a maximising one."""
+# A Mancala brain. Every weight at zero is exactly the original algorithm -
+# plain stone difference - so the reference bot is the zero brain and anything
+# a learner finds is measured against it.
+#   side     — stones sitting on your own side, still yours to work with
+#   mobility — how many pits you can still play from
+#   extra    — pits loaded to land exactly in your store, i.e. a free turn
+#   capture  — empty pits on your side facing a loaded pit opposite
+M_KEYS = ['side', 'mobility', 'extra', 'capture']
+M_DEFAULT = {k: 0.0 for k in M_KEYS}
+M_BOUNDS = {'side': (-1.5, 1.5), 'mobility': (-2.0, 2.0),
+            'extra': (-3.0, 3.0), 'capture': (-3.0, 3.0)}
+M_MUTATION = {'side': 0.12, 'mobility': 0.2, 'extra': 0.3, 'capture': 0.3}
+M_JITTER = {'side': 0.15, 'mobility': 0.25, 'extra': 0.4, 'capture': 0.4}
+M_REF_DEPTH = 7           # the original's "hard" setting
+
+
+def m_eval(board, me, w):
+    """Stone difference, plus whatever else this brain has learned to value."""
+    opp = 1 - me
+    v = float(board[M_STORE[me]] - board[M_STORE[opp]])
+    if not w:
+        return v
+    mine, theirs = M_SIDE[me], M_SIDE[opp]
+    if w['side']:
+        v += w['side'] * (sum(board[i] for i in mine) - sum(board[i] for i in theirs))
+    if w['mobility']:
+        v += w['mobility'] * (sum(1 for i in mine if board[i])
+                              - sum(1 for i in theirs if board[i]))
+    if w['extra']:
+        v += w['extra'] * (sum(1 for i in mine if board[i] == M_STORE[me] - i)
+                           - sum(1 for i in theirs if board[i] == M_STORE[opp] - i))
+    if w['capture']:
+        v += w['capture'] * (
+            sum(1 for i in mine if board[i] == 0 and board[M_OPPOSITE[i]] > 0)
+            - sum(1 for i in theirs if board[i] == 0 and board[M_OPPOSITE[i]] > 0))
+    return v
+
+
+def m_search(board, player, me, depth, alpha, beta, w=None):
+    """Alpha-beta, as the original did. Handles Mancala's extra-turn rule:
+    sowing into your own store leaves it your move, so the node stays a
+    maximising one."""
     moves = m_moves(board, player)
     if depth <= 0 or not moves:
         if not moves:
             b = board[:]
             m_sweep(b)
-            return b[M_STORE[me]] - b[M_STORE[1 - me]]
-        return board[M_STORE[me]] - board[M_STORE[1 - me]]
+            return m_eval(b, me, w)
+        return m_eval(board, me, w)
     maximizing = (player == me)
     best = -10 ** 6 if maximizing else 10 ** 6
     for pit in moves:
         b = board[:]
         extra, _ = m_sow(b, player, pit)
         nxt = player if extra else 1 - player
-        val = m_search(b, nxt, me, depth - 1, alpha, beta)
+        val = m_search(b, nxt, me, depth - 1, alpha, beta, w)
         if maximizing:
             best = max(best, val)
             alpha = max(alpha, best)
@@ -508,7 +546,13 @@ class Mancala:
         self.players = [{'cid': s['id'], 'name': s['name'],
                          'kind': s.get('kind', 'human'),
                          'profile': s.get('profile'),
-                         'blunder': float(s.get('blunder') or 0.0)}
+                         # the reference bot plays the original algorithm: plain
+                         # stone difference, deepest search, never careless
+                         'reference': bool(s.get('reference')),
+                         'weights': (None if s.get('reference')
+                                     else dict(s.get('weights') or M_DEFAULT)),
+                         'blunder': (0.0 if s.get('reference')
+                                     else float(s.get('blunder') or 0.0))}
                         for s in seats]
         self.board = [M_STONES] * 14
         self.board[M_P1_STORE] = 0
@@ -601,6 +645,8 @@ class Mancala:
     def depth_for(self, p):
         """Search depth from the bot's carelessness, so a bot plays at the
         same relative strength here as it does anywhere else."""
+        if self.players[p]['reference']:
+            return M_REF_DEPTH
         return max(1, min(7, int(round(6.5 - 15.0 * self.players[p]['blunder']))))
 
     def bot_step(self):
@@ -617,12 +663,13 @@ class Mancala:
             pick = random.choice(moves)
         else:
             depth = self.depth_for(p)
+            w = self.players[p]['weights']
             best, pick = None, moves[0]
             for pit in moves:
                 b = self.board[:]
                 extra, _ = m_sow(b, p, pit)
                 nxt = p if extra else 1 - p
-                val = m_search(b, nxt, p, depth - 1, -10 ** 6, 10 ** 6)
+                val = m_search(b, nxt, p, depth - 1, -10 ** 6, 10 ** 6, w)
                 if best is None or val > best:
                     best, pick = val, pit
         self.sow(self.players[p]['cid'], pick)
@@ -894,7 +941,8 @@ def leaderboard(game, limit=25):
 def stats_payload():
     return {'leaderboard': {g: leaderboard(g) for g in GAMES},
             'recent': STATS['history'][:10],
-            'profiles': profiles_payload(), 'training': dict(TRAINING)}
+            'profiles': profiles_payload(), 'training': dict(TRAINING),
+            'eloTrack': ELO_TRACK}
 
 
 def record_room_result(r):
@@ -912,7 +960,16 @@ def record_room_result(r):
 #  AI profiles & self-play training — persisted to ai_profiles.json
 # ============================================================
 PROFILES_FILE = os.path.join(BASE, 'ai_profiles.json')
-PROFILES = {'version': 1, 'updated': None, 'profiles': {}}
+PROFILES = {'version': 3, 'updated': None, 'profiles': {}}
+
+# What a bot's learnable weights are, per game. Adding a game here is all the
+# trainer needs to start tuning brains for it.
+BRAINS = {
+    'quixx': {'keys': WEIGHT_KEYS, 'default': DEFAULT_WEIGHTS,
+              'bounds': WEIGHT_BOUNDS, 'mutation': MUTATION, 'jitter': BIRTH_JITTER},
+    'mancala': {'keys': M_KEYS, 'default': M_DEFAULT, 'bounds': M_BOUNDS,
+                'mutation': M_MUTATION, 'jitter': M_JITTER},
+}
 
 # Rounds are attempts, not gains: most are rejected, so a small run usually
 # changes nothing. 30 gives a 5-bot roster ~6 attempts each, which is where
@@ -925,17 +982,32 @@ ADOPT_EDGE = 0.545       # share needed to earn that second look
 CONFIRM_EDGE = 0.52      # share needed across both, to actually be adopted
 BASELINE_GAMES = 200     # games used to measure a profile against its original
 TRAINING = {'running': False, 'round': 0, 'rounds': 0, 'who': None,
-            'adopted': 0, 'games': 0, 'started': None, 'finished': None,
-            'log': []}
+            'adopted': 0, 'games': 0, 'game': 'quixx', 'started': None,
+            'finished': None, 'log': []}
 
 
-def birth_weights():
+def birth_weights(game='quixx'):
+    spec = BRAINS[game]
     w = {}
-    for k in WEIGHT_KEYS:
-        lo, hi = WEIGHT_BOUNDS[k]
-        w[k] = round(min(hi, max(lo, DEFAULT_WEIGHTS[k]
-                                 + random.gauss(0.0, BIRTH_JITTER[k]))), 3)
+    for k in spec['keys']:
+        lo, hi = spec['bounds'][k]
+        w[k] = round(min(hi, max(lo, spec['default'][k]
+                                 + random.gauss(0.0, spec['jitter'][k]))), 3)
     return w
+
+
+def blank_brain(game, weights=None):
+    w = dict(weights) if weights else birth_weights(game)
+    return {'weights': w, 'baseline': dict(w), 'generation': 0, 'trained': 0,
+            'adopted': 0, 'vsBaseline': None, 'reference': False, 'history': []}
+
+
+def brain(pid, game):
+    """A profile's brain for one game, created on first use."""
+    p = PROFILES['profiles'].get(pid)
+    if not p:
+        return None
+    return p.setdefault('brains', {}).setdefault(game, blank_brain(game))
 
 
 def new_roster():
@@ -947,17 +1019,14 @@ def new_roster():
     profiles, order = {}, []
     for n, share in zip(names, spread):
         pid = 'ai_' + uuid.uuid4().hex[:8]
-        w = birth_weights()
         profiles[pid] = {
             'id': pid, 'name': n,
             'blunder': round(0.02 + 0.33 * share, 3),
             'noise': round(0.2 + 2.6 * share, 2),
-            'weights': w,
-            'baseline': dict(w),          # never changes: the yardstick
-            'generation': 0, 'trained': 0, 'adopted': 0, 'vsBaseline': None,
-            'born': iso_now(), 'history': []}
+            'brains': {g: blank_brain(g) for g in BRAINS},
+            'born': iso_now()}
         order.append(pid)
-    return {'version': 2, 'profiles': profiles, 'order': order}
+    return {'version': 3, 'profiles': profiles, 'order': order}
 
 
 def load_profiles():
@@ -969,7 +1038,7 @@ def load_profiles():
     except (OSError, ValueError):
         data = None
     fresh = (not isinstance(data, dict) or not isinstance(data.get('profiles'), dict)
-             or not data['profiles'] or data.get('version') != 2)
+             or not data['profiles'])
     if fresh:
         data = new_roster()
     order = [p for p in (data.get('order') or []) if p in data['profiles']]
@@ -980,26 +1049,57 @@ def load_profiles():
         p.setdefault('name', pid)
         p.setdefault('blunder', 0.1)
         p.setdefault('noise', 1.0)
-        p.setdefault('generation', 0)
-        p.setdefault('trained', 0)
-        p.setdefault('adopted', 0)
-        p.setdefault('vsBaseline', None)
         p.setdefault('born', iso_now())
-        p.setdefault('history', [])
-        p.setdefault('weights', dict(DEFAULT_WEIGHTS))
-        p.setdefault('baseline', dict(p['weights']))
-        for k in WEIGHT_KEYS:
-            lo, hi = WEIGHT_BOUNDS[k]
-            p['weights'][k] = min(hi, max(lo, float(p['weights'].get(k, DEFAULT_WEIGHTS[k]))))
-            p['baseline'].setdefault(k, DEFAULT_WEIGHTS[k])
-        # drop weights from an experiment that has since been removed
-        for d in (p['weights'], p['baseline']):
-            for k in [k for k in d if k not in WEIGHT_KEYS]:
-                del d[k]
-    data['version'] = 2
+        # v2 kept one Quixx brain at the top level; move it under brains.quixx
+        # so the thousands of games already trained into it are not thrown away
+        if 'brains' not in p:
+            p['brains'] = {'quixx': {
+                'weights': p.get('weights') or dict(DEFAULT_WEIGHTS),
+                'baseline': p.get('baseline') or dict(DEFAULT_WEIGHTS),
+                'generation': p.get('generation', 0), 'trained': p.get('trained', 0),
+                'adopted': p.get('adopted', 0), 'vsBaseline': p.get('vsBaseline'),
+                'reference': False, 'history': p.get('history') or []}}
+        for k in ('weights', 'baseline', 'generation', 'trained', 'adopted',
+                  'vsBaseline', 'history'):
+            p.pop(k, None)
+        for game, spec in BRAINS.items():
+            b = p['brains'].setdefault(game, blank_brain(game))
+            b.setdefault('reference', False)
+            b.setdefault('history', [])
+            for f, d in (('generation', 0), ('trained', 0), ('adopted', 0),
+                         ('vsBaseline', None)):
+                b.setdefault(f, d)
+            b.setdefault('weights', dict(spec['default']))
+            b.setdefault('baseline', dict(b['weights']))
+            for k in spec['keys']:
+                lo, hi = spec['bounds'][k]
+                b['weights'][k] = min(hi, max(lo, float(b['weights'].get(k, spec['default'][k]))))
+                b['baseline'].setdefault(k, spec['default'][k])
+            for d in (b['weights'], b['baseline']):   # drop retired weights
+                for k in [k for k in d if k not in spec['keys']]:
+                    del d[k]
+    designate_reference(data, 'mancala')
+    data['version'] = 3
     PROFILES = data
     save_profiles()
     return fresh
+
+
+def designate_reference(data, game):
+    """One bot per game plays the original algorithm untouched, as the yardstick
+    everything else is measured against. The sharpest bot gets the job so the
+    benchmark really is the one to beat."""
+    profs = [data['profiles'][p] for p in data['order'] if p in data['profiles']]
+    if not profs:
+        return
+    current = [p for p in profs if p['brains'].get(game, {}).get('reference')]
+    if current:
+        return
+    pick = min(profs, key=lambda p: p.get('blunder', 1.0))
+    b = pick['brains'].setdefault(game, blank_brain(game))
+    b['reference'] = True
+    b['weights'] = dict(BRAINS[game]['default'])     # zero == the original
+    b['baseline'] = dict(b['weights'])
 
 
 def roster():
@@ -1018,41 +1118,46 @@ def save_profiles():
         print('  [ai] could not write %s: %s' % (PROFILES_FILE, e))
 
 
-def profile_seat(pid, name=None):
-    """A seat dict for one AI, carrying a snapshot of its brain."""
+def profile_seat(pid, name=None, game='quixx'):
+    """A seat dict for one AI, carrying a snapshot of its brain for this game."""
     p = PROFILES['profiles'].get(pid)
     if not p:
         return None
+    b = brain(pid, game) or {}
     return {'id': 'ai:' + pid, 'name': name or p['name'], 'kind': 'ai',
-            'profile': pid, 'weights': dict(p['weights']),
+            'profile': pid, 'weights': dict(b.get('weights') or {}),
+            'reference': bool(b.get('reference')),
             'blunder': p['blunder'], 'noise': p['noise']}
 
 
-def mutate(w):
+def mutate(w, game='quixx'):
+    spec = BRAINS[game]
     out = {}
-    for k in WEIGHT_KEYS:
-        lo, hi = WEIGHT_BOUNDS[k]
-        out[k] = round(min(hi, max(lo, w[k] + random.gauss(0.0, MUTATION[k]))), 3)
+    for k in spec['keys']:
+        lo, hi = spec['bounds'][k]
+        out[k] = round(min(hi, max(lo, w[k] + random.gauss(0.0, spec['mutation'][k]))), 3)
     return out
 
 
-def sim_seat(name, prof, weights):
+def sim_seat(name, prof, weights, reference=False):
     """A throwaway seat used for unrated trial games."""
     return {'id': 'sim:' + name, 'name': name, 'kind': 'ai', 'profile': prof['id'],
-            'weights': dict(weights), 'blunder': prof['blunder'],
-            'noise': prof['noise']}
+            'weights': dict(weights), 'reference': reference,
+            'blunder': prof['blunder'], 'noise': prof['noise']}
 
 
-def sim_game(seats, variant=None):
+def sim_game(seats, game='quixx', variant=None):
     """Play a table of AI out to the end, as fast as the CPU allows."""
-    g = Quixx(variant or random.choice(sorted(VARIANTS)), seats)
+    spec = GAMES[game]
+    seats = seats[:spec['max']]
+    g = spec['engine'](variant or random.choice(sorted(spec['variants'])), seats)
     for _ in range(4000):
         if not g.bot_step():
             break
     return g
 
 
-def match(prof, wa, wb, games):
+def match(prof, wa, wb, games, game='quixx'):
     """Unrated head-to-head between two brains wearing the same bot's
     handicaps. Returns wa's score share, seats alternated so going first is
     not an advantage."""
@@ -1061,13 +1166,13 @@ def match(prof, wa, wb, games):
         ia = i % 2
         ws = [None, None]
         ws[ia], ws[1 - ia] = wa, wb
-        g = sim_game([sim_seat('S0', prof, ws[0]), sim_seat('S1', prof, ws[1])])
+        g = sim_game([sim_seat('S0', prof, ws[0]), sim_seat('S1', prof, ws[1])], game)
         ta, tb = g.total(ia), g.total(1 - ia)
         pts += 0.5 if ta == tb else (1.0 if ta > tb else 0.0)
     return pts / games
 
 
-def train_round(pid):
+def train_round(pid, game='quixx'):
     """One hill-climbing step: mutate, screen the mutant against the incumbent,
     and if it looks good make it prove that again on fresh games before it is
     adopted. A single 120-game screen is only about one standard error wide, so
@@ -1075,56 +1180,64 @@ def train_round(pid):
     enough to walk a bot backwards."""
     with LOCK:
         prof = dict(PROFILES['profiles'][pid])
-        base = dict(prof['weights'])
-    cand = mutate(base)
-    share = match(prof, cand, base, TRAIN_GAMES)           # slow, runs unlocked
+        b = brain(pid, game)
+        if b.get('reference'):
+            return None, False, 0        # the yardstick never moves
+        base = dict(b['weights'])
+    cand = mutate(base, game)
+    share = match(prof, cand, base, TRAIN_GAMES, game)      # slow, runs unlocked
     played = TRAIN_GAMES
     if share >= ADOPT_EDGE:
-        again = match(prof, cand, base, CONFIRM_GAMES)
+        again = match(prof, cand, base, CONFIRM_GAMES, game)
         share = ((share * TRAIN_GAMES + again * CONFIRM_GAMES)
                  / float(TRAIN_GAMES + CONFIRM_GAMES))
         played += CONFIRM_GAMES
     with LOCK:
-        prof = PROFILES['profiles'][pid]
-        prof['trained'] += played
+        b = brain(pid, game)
+        b['trained'] += played
         adopted = played > TRAIN_GAMES and share >= CONFIRM_EDGE
         if adopted:
-            prof['weights'] = cand
-            prof['generation'] += 1
-            prof['adopted'] += 1
-            prof['history'].insert(0, {'ts': iso_now(), 'generation': prof['generation'],
-                                       'share': round(share, 3), 'weights': cand})
-            del prof['history'][30:]
+            b['weights'] = cand
+            b['generation'] += 1
+            b['adopted'] += 1
+            b['history'].insert(0, {'ts': iso_now(), 'generation': b['generation'],
+                                    'share': round(share, 3), 'weights': cand})
+            del b['history'][30:]
         save_profiles()
     return share, adopted, played
 
 
-def measure_baseline(pid):
+def measure_baseline(pid, game='quixx'):
     """How a bot's current brain fares against the one it was born with."""
     with LOCK:
         prof = dict(PROFILES['profiles'][pid])
-        cur, base = dict(prof['weights']), dict(prof['baseline'])
-    share = match(prof, cur, base, BASELINE_GAMES)
+        b = brain(pid, game)
+        if b.get('reference'):
+            return None
+        cur, base = dict(b['weights']), dict(b['baseline'])
+    share = match(prof, cur, base, BASELINE_GAMES, game)
     with LOCK:
-        PROFILES['profiles'][pid]['vsBaseline'] = round(share, 3)
+        brain(pid, game)['vsBaseline'] = round(share, 3)
         save_profiles()
     return share
 
 
-def ladder_game():
+def ladder_game(game='quixx'):
     """One *rated* AI-vs-AI game. Goes through the normal stats path, so the
     bots' ELOs move against each other exactly like human games do."""
     with LOCK:
         pool = PROFILES['order'][:]
     if len(pool) < 2:
         return None
-    picks = random.sample(pool, random.randint(2, min(MAX_SEATS, len(pool))))
+    cap = min(GAMES[game]['max'], len(pool))
+    lo = min(GAMES[game]['min'], cap)
+    picks = random.sample(pool, random.randint(lo, cap))
     with LOCK:
-        seats = [profile_seat(p) for p in picks]
+        seats = [profile_seat(p, None, game) for p in picks]
     seats = [s for s in seats if s]
     if len(seats) < 2:
         return None
-    g = sim_game(seats)
+    g = sim_game(seats, game)
     summary = g.result_summary()
     summary['selfPlay'] = True
     with LOCK:
@@ -1132,9 +1245,12 @@ def ladder_game():
     return g
 
 
-def run_training(rounds, ladder=4, verbose=False):
+def run_training(rounds, ladder=4, game='quixx', verbose=False):
     """Work through the roster: one hill-climbing round per bot, then a few
     rated games so the ratings keep moving. Safe to run off-thread."""
+    TRAINING['game'] = game
+    with LOCK:
+        track_elo(game)               # a starting point, so the graph opens flat
     for i in range(rounds):
         if not TRAINING['running']:
             break
@@ -1147,16 +1263,20 @@ def run_training(rounds, ladder=4, verbose=False):
         with LOCK:
             TRAINING['round'] = i + 1
             TRAINING['who'] = name
-        share, adopted, played = train_round(pid)
+        share, adopted, played = train_round(pid, game)
         for _ in range(ladder):
-            ladder_game()
-        line = '%s %s (%d%% in trials)' % (
-            name, 'improved' if adopted else 'held its ground', round(share * 100))
+            ladder_game(game)
+        if share is None:                 # the reference bot, left alone
+            line = '%s is the reference — plays the original, never trains' % name
+        else:
+            line = '%s %s (%d%% in trials)' % (
+                name, 'improved' if adopted else 'held its ground', round(share * 100))
         with LOCK:
             TRAINING['games'] += played + ladder
             TRAINING['adopted'] += 1 if adopted else 0
             TRAINING['log'].insert(0, line)
             del TRAINING['log'][6:]
+            track_elo(game)
             broadcast_stats()
         if verbose:
             print('  round %d/%d — %s' % (i + 1, rounds, line))
@@ -1165,24 +1285,44 @@ def run_training(rounds, ladder=4, verbose=False):
     for pid in order:
         if not TRAINING['running']:
             break
-        share = measure_baseline(pid)
-        if verbose:
+        share = measure_baseline(pid, game)
+        if verbose and share is not None:
             print('  %s vs. the brain it was born with: %d%%'
                   % (PROFILES['profiles'][pid]['name'], round(share * 100)))
 
 
-def calibrate(games=90):
+ELO_TRACK_MAX = 90        # points kept per bot; the window scrolls past that
+ELO_TRACK = {}            # game -> {name: [elo, ...]}
+
+
+def track_elo(game):
+    """Sample every bot's rating so the training graph has a line to draw.
+    Older points fall off the left as new ones arrive."""
+    series = ELO_TRACK.setdefault(game, {})
+    live = set()
+    for p in roster():
+        live.add(p['name'])
+        rec = ((STATS['players'].get(p['name'].lower()) or {}).get('games') or {}).get(game)
+        s = series.setdefault(p['name'], [])
+        s.append(round(rec['elo'], 1) if rec else ELO_START)
+        del s[:-ELO_TRACK_MAX]
+    for gone in [n for n in series if n not in live]:
+        del series[gone]
+    return series
+
+
+def calibrate(games=90, game='quixx'):
     """A quick rated ladder so a brand-new roster has meaningful ratings the
     first time anyone looks at the leaderboard."""
     for _ in range(games):
-        ladder_game()
+        ladder_game(game)
     with LOCK:
         broadcast_stats()
 
 
-def train_worker(rounds, ladder):
+def train_worker(rounds, ladder, game='quixx'):
     try:
-        run_training(rounds, ladder)
+        run_training(rounds, ladder, game)
     finally:
         with LOCK:
             TRAINING['running'] = False
@@ -1203,12 +1343,22 @@ def profiles_payload():
             if rec.get('played'):
                 elos[gk] = round(rec['elo'], 1)
                 played[gk] = rec['played']
+        brains = {}
+        for gk in BRAINS:
+            b = (p.get('brains') or {}).get(gk) or {}
+            brains[gk] = {'generation': b.get('generation', 0),
+                          'trained': b.get('trained', 0),
+                          'adopted': b.get('adopted', 0),
+                          'vsBaseline': b.get('vsBaseline'),
+                          'reference': bool(b.get('reference')),
+                          'weights': b.get('weights') or {}}
+        q = brains.get('quixx', {})
         out.append({'id': p['id'], 'name': p['name'],
-                    'elos': elos, 'plays': played,
+                    'elos': elos, 'plays': played, 'brains': brains,
                     'elo': elos.get('quixx'), 'played': played.get('quixx', 0),
-                    'generation': p['generation'], 'trained': p['trained'],
-                    'adopted': p['adopted'], 'vsBaseline': p.get('vsBaseline'),
-                    'weights': p['weights']})
+                    'generation': q.get('generation', 0), 'trained': q.get('trained', 0),
+                    'adopted': q.get('adopted', 0), 'vsBaseline': q.get('vsBaseline'),
+                    'weights': q.get('weights', {})})
     out.sort(key=lambda r: (r['elo'] is None, -(r['elo'] or 0)))
     return out
 
@@ -1236,7 +1386,7 @@ def room_seats(r):
     out = [{'id': c, 'name': CLIENTS[c]['name'], 'kind': 'human'}
            for c in r['players'] if c in CLIENTS]
     for b in r['bots']:
-        seat = profile_seat(b['profile'], b['name'])
+        seat = profile_seat(b['profile'], b['name'], r['game'])
         if seat:
             seat['id'] = b['id']
             out.append(seat)
@@ -1656,10 +1806,14 @@ class Handler(BaseHTTPRequestHandler):
                 rounds = DEFAULT_ROUNDS
             rounds = max(1, min(MAX_ROUNDS, rounds))
             ladder = max(0, min(20, int(body.get('ladder') or 4)))
+            tgame = str(body.get('game') or 'quixx')
+            if tgame not in BRAINS:
+                self.err('That game has no trainable AI.')
+                return
             TRAINING.update({'running': True, 'round': 0, 'rounds': rounds,
-                             'who': None, 'adopted': 0, 'games': 0,
+                             'who': None, 'adopted': 0, 'games': 0, 'game': tgame,
                              'started': iso_now(), 'finished': None, 'log': []})
-            threading.Thread(target=train_worker, args=(rounds, ladder),
+            threading.Thread(target=train_worker, args=(rounds, ladder, tgame),
                              daemon=True).start()
             broadcast_stats()
             self.send_json({'ok': True})
@@ -1836,35 +1990,42 @@ def reset_ai():
             cleared += 1
     save_stats()
     for p in roster():
-        p['baseline'] = dict(p['weights'])      # today's brain is the new yardstick
-        p['vsBaseline'] = None
+        for b in (p.get('brains') or {}).values():
+            b['baseline'] = dict(b['weights'])   # today's brain is the new yardstick
+            b['vsBaseline'] = None
     save_profiles()
     print('\n  Cleared ratings for %d bots; human records and history untouched.'
           % cleared)
     print('  Re-baselined %d brains against their current weights.' % len(roster()))
     print('  Playing calibration games...')
     TRAINING['running'] = True
-    calibrate()
+    for g in BRAINS:
+        calibrate(90, g)
     TRAINING['running'] = False
-    for row in profiles_payload():
-        print('    %-12s elo %-8s %d rated games'
-              % (row['name'], row['elo'], row['played']))
+    for g in BRAINS:
+        print('  %s:' % g)
+        for row in sorted(profiles_payload(), key=lambda r: -(r['elos'].get(g) or 0)):
+            print('    %-12s elo %-8s %d rated games'
+                  % (row['name'], row['elos'].get(g, '—'), row['plays'].get(g, 0)))
     print()
 
 
-def train_cli(rounds):
-    """python homegames_server.py --train [rounds] — bulk training, no server."""
+def train_cli(rounds, game='quixx'):
+    """python homegames_server.py --train [rounds] [game] — bulk training."""
     load_stats()
     if load_profiles():
         print('  Minted a new roster: %s'
               % ', '.join(p['name'] for p in roster()))
+    ref = [p['name'] for p in roster() if (p['brains'].get(game) or {}).get('reference')]
+    if ref:
+        print('  Reference (plays the original, never trains): %s' % ref[0])
     print('\n  Training the AI by self-play: %d rounds '
           '(%d trial games each, plus rated ladder games).\n' % (rounds, TRAIN_GAMES))
-    TRAINING.update({'running': True, 'rounds': rounds, 'round': 0,
+    TRAINING.update({'running': True, 'rounds': rounds, 'round': 0, 'game': game,
                      'adopted': 0, 'games': 0, 'started': iso_now()})
     start = time.time()
     try:
-        run_training(rounds, ladder=4, verbose=True)
+        run_training(rounds, ladder=4, game=game, verbose=True)
     except KeyboardInterrupt:
         print('\n  Stopped early — progress so far is saved.')
     finally:
@@ -1873,11 +2034,15 @@ def train_cli(rounds):
     print('\n  %d rounds, %d improvements, %d games, %.0fs.'
           % (TRAINING['round'], TRAINING['adopted'], TRAINING['games'],
              time.time() - start))
-    print('  Ratings after self-play:')
-    for row in profiles_payload():
-        print('    %-12s elo %-8s %d rated games'
-              % (row['name'], row['elo'] if row['elo'] is not None else '—',
-                 row['played']))
+    print('  Ratings after self-play (%s):' % game)
+    rows = sorted(profiles_payload(),
+                  key=lambda r: -(r['elos'].get(game) or 0))
+    for row in rows:
+        b = row['brains'].get(game, {})
+        print('    %-12s elo %-8s %5d rated  gen %-3d %s'
+              % (row['name'], row['elos'].get(game, '—'),
+                 row['plays'].get(game, 0), b.get('generation', 0),
+                 '(reference)' if b.get('reference') else ''))
     print()
 
 
@@ -1891,7 +2056,12 @@ def main():
             rounds = int(args[1]) if len(args) > 1 else DEFAULT_ROUNDS
         except ValueError:
             rounds = DEFAULT_ROUNDS
-        train_cli(max(1, min(500, rounds)))
+        tgame = args[2] if len(args) > 2 else 'quixx'
+        if tgame not in BRAINS:
+            print('  Unknown game %r — try one of: %s'
+                  % (tgame, ', '.join(sorted(BRAINS))))
+            return
+        train_cli(max(1, min(500, rounds)), tgame)
         return
     load_stats()
     fresh = load_profiles()

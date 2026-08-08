@@ -149,6 +149,18 @@
   .trainbar{height:8px;background:#eee;border-radius:6px;overflow:hidden;margin-top:12px;}
   .trainbar div{height:100%;background:var(--green);transition:width .4s;}
 
+  /* live ELO chart */
+  .chartbox{margin-top:12px;border:1px solid #e6e2da;border-radius:12px;padding:10px 8px 6px;background:#fcfbf9;}
+  .chartbox svg{display:block;width:100%;height:190px;}
+  .chart-grid{stroke:#e8e4dc;stroke-width:1;}
+  .chart-line{fill:none;stroke-width:2.2;stroke-linejoin:round;stroke-linecap:round;}
+  .chart-line.ref{stroke-dasharray:6 4;stroke-width:2.6;}
+  .chart-ax{fill:#aaa;font-size:10px;}
+  .chart-key{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px;font-size:.78em;}
+  .chart-key span{display:inline-flex;align-items:center;gap:5px;color:#666;}
+  .chart-key i{width:14px;height:3px;border-radius:2px;display:inline-block;}
+  .chart-key b{color:var(--ink);}
+
   .board{background:var(--card);border:2px solid #e6e2da;border-radius:16px;padding:14px;margin-bottom:14px;}
   .board.turn{border-color:var(--ink);}
   .board.acting{border-color:var(--blue);box-shadow:0 0 0 3px var(--blue-bg);}
@@ -717,6 +729,47 @@ async function showPlayer(encName){
 
 /* ---------- leaderboard ---------- */
 function streakTxt(s){return s>0?('🔥 '+s):(s<0?('❄ '+(-s)):'—');}
+const LINE_COLORS=['#3f6fc4','#3a9e6b','#d64545','#b07f10','#8e5bbf','#2aa3a3'];
+function lineColor(i){return LINE_COLORS[i%LINE_COLORS.length];}
+function eloChart(){
+  const gk=curGame||'quixx';
+  const series=((stats&&stats.eloTrack)||{})[gk]||{};
+  const names=Object.keys(series).filter(n=>series[n]&&series[n].length);
+  if(!names.length)return '';
+  const len=Math.max.apply(null,names.map(n=>series[n].length));
+  if(len<2)return '';
+  const refs={};
+  ((stats&&stats.profiles)||[]).forEach(p=>{refs[p.name]=((p.brains||{})[gk]||{}).reference;});
+
+  let lo=Infinity,hi=-Infinity;
+  names.forEach(n=>series[n].forEach(v=>{if(v<lo)lo=v;if(v>hi)hi=v;}));
+  const pad=Math.max(20,(hi-lo)*0.12); lo-=pad; hi+=pad;
+  const W=560,H=190,L=38,R=8,T=10,B=20;
+  const x=i=>L+(W-L-R)*(len<2?0:i/(len-1));
+  const y=v=>T+(H-T-B)*(1-(v-lo)/Math.max(1,hi-lo));
+
+  let h='<div class="chartbox"><svg viewBox="0 0 '+W+' '+H+'" preserveAspectRatio="none" '
+    +'role="img" aria-label="Live ELO during self-play training">';
+  for(let g=0;g<=4;g++){
+    const v=lo+(hi-lo)*g/4, yy=y(v).toFixed(1);
+    h+='<line class="chart-grid" x1="'+L+'" y1="'+yy+'" x2="'+(W-R)+'" y2="'+yy+'"></line>'
+      +'<text class="chart-ax" x="2" y="'+(+yy+3).toFixed(1)+'">'+Math.round(v)+'</text>';
+  }
+  names.forEach((n,i)=>{
+    const s=series[n],off=len-s.length;
+    const pts=s.map((v,j)=>x(j+off).toFixed(1)+','+y(v).toFixed(1)).join(' ');
+    h+='<polyline class="chart-line'+(refs[n]?' ref':'')+'" points="'+pts+'" stroke="'+lineColor(i)+'"></polyline>';
+  });
+  h+='</svg>';
+  h+='<div class="chart-key">'+names.map((n,i)=>{
+    const s=series[n];
+    return '<span><i style="background:'+lineColor(i)+'"></i>'+esc(n)
+      +(refs[n]?' <span class="lvl">reference</span>':'')
+      +' <b>'+Math.round(s[s.length-1])+'</b></span>';
+  }).join('')+'</div></div>';
+  return h;
+}
+
 function renderAI(){
   const el=$('aiPanel');if(!el)return;
   const t=(stats&&stats.training)||{},ps=aiRoster();
@@ -726,38 +779,42 @@ function renderAI(){
     h+='<table class="lb"><tr>'+th('Bot','bot')+th('ELO','elo')
       +th('Rated games','rated')+th('Gen','gen')+th('Trained on','trained')
       +th('vs. birth','birth')+'</tr>';
+    const gk=curGame||'quixx';
     ps.forEach(p=>{
-      h+='<tr><td>🤖 <b>'+esc(p.name)+'</b></td>'
+      const b=(p.brains||{})[gk]||{};
+      h+='<tr><td>🤖 <b>'+esc(p.name)+'</b>'
+        +(b.reference?' <span class="lvl" title="Plays the original algorithm untouched. It never trains — it is the yardstick the others are measured against.">reference</span>':'')
+        +'</td>'
         +'<td class="elo">'+(p.elo==null?'—':p.elo)+'</td>'
-        +'<td>'+p.played+'</td><td>'+p.generation+'</td>'
-        +'<td>'+p.trained.toLocaleString()+' games</td>'
-        +'<td>'+(p.vsBaseline==null?'—':Math.round(p.vsBaseline*100)+'%')+'</td></tr>';
+        +'<td>'+p.played+'</td>'
+        +'<td>'+(b.reference?'—':(b.generation||0))+'</td>'
+        +'<td>'+(b.reference?'—':(b.trained||0).toLocaleString()+' games')+'</td>'
+        +'<td>'+(b.reference?'—':(b.vsBaseline==null?'—':Math.round(b.vsBaseline*100)+'%'))+'</td></tr>';
     });
     h+='</table>';
   }
+  h+=eloChart();
   if(t.running){
     const pct=Math.round(100*(t.round||0)/(t.rounds||1));
     h+='<div class="trainbar"><div style="width:'+pct+'%"></div></div>'
-      +'<div class="recent">Training — round '+(t.round||0)+' of '+(t.rounds||'?')
+      +'<div class="recent">Training '+esc(t.game||'quixx')+' — round '+(t.round||0)
+      +' of '+(t.rounds||'?')
       +(t.who?' · '+esc(t.who):'')+' · '+(t.games||0).toLocaleString()+' games played '
       +'<button class="link-btn" onclick="stopTraining()">stop</button></div>';
-  }else if((curGame||'quixx')==='quixx'){
+  }else{
     h+='<div class="tsrow" style="margin-top:12px"><span class="tslabel">Self-play</span>'
       +'<input id="trainRounds" type="number" min="1" max="200" value="30" '
       +'style="width:64px;padding:6px;border:1px solid #ccc;border-radius:8px">'
       +'<span class="lvl">rounds</span>'
-      +'<button class="small-btn" onclick="startTraining()">Train the AI</button></div>';
-  }else{
-    h+='<div class="recent">These bots play '+esc((gameDef()||{}).title||'this game')
-      +' by search, not by trained weights — their rating here is earned in real games. '
-      +'Self-play training is Quixx-only for now.</div>';
+      +'<button class="small-btn" onclick="startTraining()">Train '
+      +esc((gameDef()||{}).title||'the AI')+'</button></div>';
   }
   if(t.log&&t.log.length)h+='<div class="recent">'+t.log.map(esc).join('<br>')+'</div>';
   el.innerHTML=h;
 }
 async function startTraining(){
   const el=$('trainRounds');
-  await api('train',{rounds:parseInt(el&&el.value||30,10)||30});
+  await api('train',{rounds:parseInt(el&&el.value||30,10)||30,game:curGame||'quixx'});
 }
 async function stopTraining(){await api('train',{stop:true});}
 function renderStats(){
