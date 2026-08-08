@@ -1,0 +1,143 @@
+{
+  "version": 2,
+  "profiles": {
+    "ai_f4720b9f": {
+      "id": "ai_f4720b9f",
+      "name": "Otter",
+      "blunder": 0.35,
+      "noise": 2.8,
+      "weights": {
+        "skip_cost": 0.734,
+        "late_skip": 0.0,
+        "lock_bonus": 0.488,
+        "penalty_fear": 3.675,
+        "threshold": -1.344
+      },
+      "baseline": {
+        "skip_cost": 0.734,
+        "late_skip": 0.0,
+        "lock_bonus": 0.488,
+        "penalty_fear": 3.675,
+        "threshold": -1.344
+      },
+      "generation": 0,
+      "trained": 0,
+      "adopted": 0,
+      "vsBaseline": null,
+      "born": "2026-08-08T09:34:27-04:00",
+      "history": []
+    },
+    "ai_0957bf40": {
+      "id": "ai_0957bf40",
+      "name": "Pepper",
+      "blunder": 0.268,
+      "noise": 2.15,
+      "weights": {
+        "skip_cost": 1.272,
+        "late_skip": 0.039,
+        "lock_bonus": 1.431,
+        "penalty_fear": 6.649,
+        "threshold": -0.742
+      },
+      "baseline": {
+        "skip_cost": 1.272,
+        "late_skip": 0.039,
+        "lock_bonus": 1.431,
+        "penalty_fear": 6.649,
+        "threshold": -0.742
+      },
+      "generation": 0,
+      "trained": 0,
+      "adopted": 0,
+      "vsBaseline": null,
+      "born": "2026-08-08T09:34:27-04:00",
+      "history": []
+    },
+    "ai_5f578318": {
+      "id": "ai_5f578318",
+      "name": "Fig",
+      "blunder": 0.02,
+      "noise": 0.2,
+      "weights": {
+        "skip_cost": 0.602,
+        "late_skip": 0.219,
+        "lock_bonus": 1.265,
+        "penalty_fear": 5.518,
+        "threshold": -1.909
+      },
+      "baseline": {
+        "skip_cost": 0.602,
+        "late_skip": 0.219,
+        "lock_bonus": 1.265,
+        "penalty_fear": 5.518,
+        "threshold": -1.909
+      },
+      "generation": 0,
+      "trained": 0,
+      "adopted": 0,
+      "vsBaseline": null,
+      "born": "2026-08-08T09:34:27-04:00",
+      "history": []
+    },
+    "ai_9b9cb91e": {
+      "id": "ai_9b9cb91e",
+      "name": "Domino",
+      "blunder": 0.103,
+      "noise": 0.85,
+      "weights": {
+        "skip_cost": 0.99,
+        "late_skip": 0.0,
+        "lock_bonus": 1.163,
+        "penalty_fear": 5.594,
+        "threshold": 1.089
+      },
+      "baseline": {
+        "skip_cost": 0.99,
+        "late_skip": 0.0,
+        "lock_bonus": 1.163,
+        "penalty_fear": 5.594,
+        "threshold": 1.089
+      },
+      "generation": 0,
+      "trained": 0,
+      "adopted": 0,
+      "vsBaseline": null,
+      "born": "2026-08-08T09:34:27-04:00",
+      "history": []
+    },
+    "ai_2e8d3274": {
+      "id": "ai_2e8d3274",
+      "name": "Waffles",
+      "blunder": 0.185,
+      "noise": 1.5,
+      "weights": {
+        "skip_cost": 1.279,
+        "late_skip": 0.0,
+        "lock_bonus": 0.815,
+        "penalty_fear": 7.038,
+        "threshold": -0.078
+      },
+      "baseline": {
+        "skip_cost": 1.279,
+        "late_skip": 0.0,
+        "lock_bonus": 0.815,
+        "penalty_fear": 7.038,
+        "threshold": -0.078
+      },
+      "generation": 0,
+      "trained": 0,
+      "adopted": 0,
+      "vsBaseline": null,
+      "born": "2026-08-08T09:34:27-04:00",
+      "history": []
+    }
+  },
+  "order": [
+    "ai_f4720b9f",
+    "ai_0957bf40",
+    "ai_5f578318",
+    "ai_9b9cb91e",
+    "ai_2e8d3274"
+  ],
+  "updated": "2026-08-08T09:34:27-04:00"
+}

@@ -32,6 +32,8 @@ The console prints two addresses:
 - `index.html` — the whole client app (lobby + game UI), served by the server.
 - `stats.json` — the stats backend: lifetime records and ELO ratings, written
   by the server after every finished game.
+- `ai_profiles.json` — the AI roster: each bot's name, handicaps, learned
+  weights and training history.
 
 ## Players and AI
 
@@ -41,29 +43,63 @@ waiting room has the same controls until the game starts. Removing a human seat
 below the number already joined is refused; everything else is live, and other
 players see the table update immediately.
 
-Three AI strengths, each with its own personality and its own rating:
-
-| Bot | Difficulty | How it plays |
-|---|---|---|
-| Rookie Bot | Easy | Marks almost anything it can reach, and picks near-randomly |
-| Sharp Bot | Medium | Weighs the points gained against the cells given up |
-| Ace Bot | Hard | Same, but pickier early and hunts locks; no randomness |
-
-Head to head over 500 games each: Ace beats Rookie 475–23, Ace beats Sharp
-329–167, Sharp beats Rookie 445–54.
+**There are no difficulty labels.** The AI are just named players — Rusty,
+Pepper, Marbles — and the **ELO beside each name is the difficulty**. Pick a
+1050 bot for a gentle game or a 1350 bot for a hard one. A roster of five is
+minted on first run with random names, and the server plays a quick
+calibration ladder so their ratings mean something before you ever look.
 
 AI seats take their turns the moment it is their move, so play always pauses
 where a human has a decision. The move log under the dice tray shows what
 everyone just did.
+
+## How the AI learn
+
+Each bot scores every possible mark as points gained minus the cells that mark
+gives up, using five weights that **self-play tunes**: `skip_cost`,
+`late_skip`, `lock_bonus`, `penalty_fear` and `threshold`. Training is hill
+climbing — mutate the weights, play the mutant against the incumbent, keep it
+only if it wins. A promising candidate has to prove itself twice, on fresh
+games, before it is adopted; a single 120-game screen is only about one
+standard error wide, so without that second look coin-flip mutations get
+adopted on luck and walk a bot backwards.
+
+Two things are fixed at birth and never learned: `blunder` (the share of
+decisions taken at random) and `noise` (jitter on each judgement). That is
+deliberate. Training tunes the weights, so a handicap the weights could
+compensate for would let every bot converge on the same strength and flatten
+the ratings into noise — which is exactly what happened in an early build that
+used noise alone: 84 rounds of self-play turned the field into a coin flip,
+because good weights are simply robust to noise. A blunder rate cannot be
+learned around.
+
+Between training rounds the bots play **rated** games against each other, so
+their ELOs develop on their own. Those games count towards ratings and records
+but are kept out of the recent-games list, so training cannot bury the games
+people actually played.
+
+Train them from the lobby's **The AI** panel, or in bulk from the shell:
+
+```
+python homegames_server.py --train 30
+```
+
+`ai_profiles.json` holds each bot's brain, the brain it was born with, its
+generation count and its win rate against that original self. Delete it to
+mint a fresh roster with new names.
+
+A sanity check worth repeating after heavy training — do the ratings still
+predict who wins? On a 5-bot roster, 400 games per pair, the higher-rated bot
+won 10 of 10 pairings. Gaps under ~50 points are inside the noise and will
+sometimes invert.
 
 ## Stats & ELO
 
 Every finished game is folded into `stats.json` and shown on the lobby
 leaderboard. Players are keyed by **name** (case-insensitive) — client ids only
 last a session, so the name is what carries across visits. Use the same name to
-keep building a rating. **Each AI difficulty is a player too**: Rookie, Sharp
-and Ace each carry their own ELO, so beating an Ace Bot is worth more than
-beating a Rookie.
+keep building a rating. **Each AI is a player too**, carrying its own ELO, so
+beating a highly rated bot is worth more than beating a weak one.
 
 Per player, per game: ELO, games played, W-L-T, forfeits, best and average
 score, average finishing place, total penalties, current/best win streak, and a
@@ -78,9 +114,9 @@ change for each.
 - Places are by final score, with a tie sharing a place.
 - Leaving a game in progress ends it, and the quitter places last regardless of
   the score on their sheet.
-- A name can only be rated once per game, so if two identical bots sit at the
-  same table, only the better finish counts — you cannot play yourself. Bots of
-  the same difficulty are numbered (`Sharp Bot 2`) and rate separately.
+- A name can only be rated once per game, so if the same bot sits at a table
+  twice, only the better finish counts — you cannot play yourself. The second
+  seat is numbered (`Rusty 2`) and rates separately.
 
 To wipe the history, stop the server and delete `stats.json` (or reset it to
 `{"version": 1, "players": {}, "history": []}`) — it is recreated on startup.
@@ -94,4 +130,6 @@ Game engines register in the `GAMES` dict in `homegames_server.py`
 methods and `to_dict()` for broadcasting state. The client renders by
 `state.kind`. To support AI seats, add a `bot_step()` that plays one pending AI
 action and returns `False` when the table is waiting on a human; to appear on
-the leaderboard, add a `result_summary()`.
+the leaderboard, add a `result_summary()`. Seats carry a `weights` dict plus
+`blunder`/`noise`, so an engine that reads those gets self-play training for
+free.

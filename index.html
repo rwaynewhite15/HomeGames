@@ -97,6 +97,8 @@
   .lb .rank{color:#aaa;width:24px;}
   .lb .elo{font-weight:700;}
   .recent{font-size:.82em;color:#888;margin-top:12px;line-height:1.6;}
+  .trainbar{height:8px;background:#eee;border-radius:6px;overflow:hidden;margin-top:12px;}
+  .trainbar div{height:100%;background:var(--green);transition:width .4s;}
 
   .board{background:var(--card);border:2px solid #e6e2da;border-radius:16px;padding:14px;margin-bottom:14px;}
   .board.turn{border-color:var(--ink);}
@@ -195,6 +197,11 @@
     <h3>Leaderboard <span style="font-weight:400;color:#aaa;font-size:.72em">ELO · Quixx</span></h3>
     <div id="statsPanel"><div class="empty">No finished games yet.</div></div>
   </div>
+
+  <div class="panel">
+    <h3>The AI <span style="font-weight:400;color:#aaa;font-size:.72em">they learn by playing each other</span></h3>
+    <div id="aiPanel"></div>
+  </div>
 </div>
 
 <!-- ============ ROOM ============ -->
@@ -231,7 +238,8 @@
     <p><b>Locking:</b> the last cell needs 5+ marks in that row first. Marking it locks the row for everyone, scores a bonus ✕, and removes that color's die.</p>
     <p><b>Penalty:</b> if the roller marks nothing at all, they take −5.</p>
     <p><b>Game over:</b> 2 locked rows, or someone's 4th penalty. Most points wins.</p>
-    <p><b>Players:</b> 2 to 4 seats, in any mix of people and AI. The host sets the table before hosting and can still change it in the waiting room. AI opponents come in three strengths — <b>Rookie</b>, <b>Sharp</b> and <b>Ace</b> — and each one carries its own ELO on the leaderboard, so beating an Ace Bot is worth more than beating a Rookie.</p>
+    <p><b>Players:</b> 2 to 4 seats, in any mix of people and AI. The host sets the table before hosting and can still change it in the waiting room.</p>
+    <p><b>The AI:</b> each bot is just a named player with its own rating — there are no difficulty labels, because the <b>ELO next to its name is the difficulty</b>. They train by playing each other, so those ratings drift as they get better, and beating a highly rated one is worth more.</p>
     <p style="color:#777;font-size:.85em"><b>Variants:</b> Mixed Numbers scrambles each row's number order. Mixed Colors scrambles cell colors — colored dice mark cells of their color wherever they sit, and locking a row removes the die matching its last cell's color.</p>
     <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
   </div>
@@ -245,9 +253,6 @@ const $=id=>document.getElementById(id);
 const CNAME={red:'Red',yellow:'Yellow',green:'Green',blue:'Blue'};
 const VNAME={standard:'Standard',colors:'Mixed Colors',numbers:'Mixed Numbers',both:'Both Mixed'};
 const COLORS=['red','yellow','green','blue'];
-const AI_LEVELS={easy:{title:'Rookie Bot',tag:'Easy'},medium:{title:'Sharp Bot',tag:'Medium'},
-                 hard:{title:'Ace Bot',tag:'Hard'}};
-const AI_ORDER=['easy','medium','hard'];
 const MAX_SEATS=4;
 let cfgHumans=2,cfgBots=[];   // table setup for the next game you host
 
@@ -306,7 +311,7 @@ function connectES(){
   if(es)es.close();
   es=new EventSource('/api/events?cid='+encodeURIComponent(cid));
   es.addEventListener('lobby',e=>{lobby=JSON.parse(e.data).rooms;renderLobby();});
-  es.addEventListener('stats',e=>{stats=JSON.parse(e.data);renderStats();});
+  es.addEventListener('stats',e=>{stats=JSON.parse(e.data);renderStats();renderLobbySetup();});
   es.addEventListener('room',e=>{
     const r=JSON.parse(e.data);
     if(room&&room.id!==r.id)return;
@@ -359,11 +364,16 @@ function renderLobby(){
   }).join('');
 }
 
+/* ---------- the AI roster ---------- */
+function aiRoster(){return (stats&&stats.profiles)||[];}
+function aiById(id){return aiRoster().filter(p=>p.id===id)[0]||null;}
+function eloTxt(p){return p&&p.elo!=null?p.elo:'unrated';}
+
 /* ---------- table setup: humans + AI, up to 4 seats ----------
    ns 'lobby' edits the pending setup; ns 'room' pushes it to the server. */
 function tableCfg(ns){
   if(ns==='lobby')return {humans:cfgHumans,bots:cfgBots.slice()};
-  return {humans:room.humans,bots:(room.bots||[]).map(b=>b.level)};
+  return {humans:room.humans,bots:(room.bots||[]).map(b=>b.profile)};
 }
 function tableApply(ns,humans,bots){
   if(ns==='lobby'){cfgHumans=humans;cfgBots=bots;renderLobbySetup();}
@@ -390,14 +400,18 @@ function tableHtml(ns,humans,bots,joined){
     +'<b class="tsnum">'+humans+'</b>'
     +'<button class="step" onclick="tblHumans(\''+ns+'\',1)"'+(full||humans>=MAX_SEATS?' disabled':'')+'>+</button>'
     +'<span class="tsseats">'+total+' of '+MAX_SEATS+' seats</span></div>';
+  const rost=aiRoster();
   h+='<div class="tsrow"><span class="tslabel">🤖 Add AI</span>';
-  for(const lv of AI_ORDER)
-    h+='<button class="addbot" onclick="tblAdd(\''+ns+'\',\''+lv+'\')"'+(full?' disabled':'')+'>+ '
-      +AI_LEVELS[lv].title+'</button>';
+  if(!rost.length)h+='<span class="lvl">no AI available yet</span>';
+  for(const p of rost)
+    h+='<button class="addbot" onclick="tblAdd(\''+ns+'\',\''+p.id+'\')"'+(full?' disabled':'')+'>+ '
+      +esc(p.name)+' <span class="lvl">'+eloTxt(p)+'</span></button>';
   h+='</div>';
-  if(bots.length)h+='<div class="botlist">'+bots.map((lv,i)=>
-    '<span class="botchip">🤖 '+AI_LEVELS[lv].title+' <span class="lvl">'+AI_LEVELS[lv].tag+'</span>'
-    +' <button class="x" onclick="tblDel(\''+ns+'\','+i+')" title="Remove">✕</button></span>').join('')+'</div>';
+  if(bots.length)h+='<div class="botlist">'+bots.map((id,i)=>{
+    const p=aiById(id);
+    return '<span class="botchip">🤖 '+esc(p?p.name:'AI')+' <span class="lvl">'+eloTxt(p)+'</span>'
+      +' <button class="x" onclick="tblDel(\''+ns+'\','+i+')" title="Remove">✕</button></span>';
+  }).join('')+'</div>';
   h+='</div>';
   return h;
 }
@@ -407,8 +421,47 @@ function renderLobbySetup(){
 
 /* ---------- leaderboard ---------- */
 function streakTxt(s){return s>0?('🔥 '+s):(s<0?('❄ '+(-s)):'—');}
+function renderAI(){
+  const el=$('aiPanel');if(!el)return;
+  const t=(stats&&stats.training)||{},ps=aiRoster();
+  let h='';
+  if(!ps.length)h+='<div class="empty">No AI yet.</div>';
+  else{
+    h+='<table class="lb"><tr><th>Bot</th><th>ELO</th><th>Rated games</th>'
+      +'<th>Gen</th><th>Trained on</th><th>vs. birth</th></tr>';
+    ps.forEach(p=>{
+      h+='<tr><td>🤖 <b>'+esc(p.name)+'</b></td>'
+        +'<td class="elo">'+(p.elo==null?'—':p.elo)+'</td>'
+        +'<td>'+p.played+'</td><td>'+p.generation+'</td>'
+        +'<td>'+p.trained.toLocaleString()+' games</td>'
+        +'<td>'+(p.vsBaseline==null?'—':Math.round(p.vsBaseline*100)+'%')+'</td></tr>';
+    });
+    h+='</table>';
+  }
+  if(t.running){
+    const pct=Math.round(100*(t.round||0)/(t.rounds||1));
+    h+='<div class="trainbar"><div style="width:'+pct+'%"></div></div>'
+      +'<div class="recent">Training — round '+(t.round||0)+' of '+(t.rounds||'?')
+      +(t.who?' · '+esc(t.who):'')+' · '+(t.games||0).toLocaleString()+' games played '
+      +'<button class="link-btn" onclick="stopTraining()">stop</button></div>';
+  }else{
+    h+='<div class="tsrow" style="margin-top:12px"><span class="tslabel">Self-play</span>'
+      +'<input id="trainRounds" type="number" min="1" max="200" value="30" '
+      +'style="width:64px;padding:6px;border:1px solid #ccc;border-radius:8px">'
+      +'<span class="lvl">rounds</span>'
+      +'<button class="small-btn" onclick="startTraining()">Train the AI</button></div>';
+  }
+  if(t.log&&t.log.length)h+='<div class="recent">'+t.log.map(esc).join('<br>')+'</div>';
+  el.innerHTML=h;
+}
+async function startTraining(){
+  const el=$('trainRounds');
+  await api('train',{rounds:parseInt(el&&el.value||30,10)||30});
+}
+async function stopTraining(){await api('train',{stop:true});}
 function renderStats(){
   const el=$('statsPanel');if(!el)return;
+  renderAI();
   const rows=(stats&&stats.leaderboard&&stats.leaderboard.quixx)||[];
   if(!rows.length){el.innerHTML='<div class="empty">No finished games yet — play one!</div>';return;}
   let h='<table class="lb"><tr><th class="rank">#</th><th>Player</th><th>ELO</th>'
@@ -417,7 +470,7 @@ function renderStats(){
     const mine=!r.ai&&myName&&r.name.toLowerCase()===myName.toLowerCase();
     h+='<tr'+(mine?' class="me"':'')+'><td class="rank">'+(i+1)+'</td>'
       +'<td>'+(r.ai?'🤖 ':'')+'<b>'+esc(r.name)+'</b>'
-      +(r.ai&&AI_LEVELS[r.level]?' <span class="badge lvl">'+AI_LEVELS[r.level].tag+'</span>':'')
+      +(r.retired?' <span class="lvl">retired</span>':'')
       +'</td><td class="elo">'+r.elo+'</td>'
       +'<td>'+r.wins+'&#8209;'+r.losses+'&#8209;'+r.ties+'</td>'
       +'<td>'+r.best+'</td><td>'+r.avg+'</td>'
@@ -469,9 +522,9 @@ function renderRoom(){
         +(room.playerIds[i]===cid?' <span class="badge you">YOU</span>':'')
         +(room.playerIds[i]===room.hostId?' <span class="badge">HOST</span>':'')+'</li>').join('')
       +bots.map((b,i)=>'<li>'+(room.players.length+i+1)+'. 🤖 '+esc(b.name)
-        +' <span class="badge lvl">'+AI_LEVELS[b.level].tag+'</span></li>').join('')
+        +' <span class="badge lvl">'+eloTxt(aiById(b.profile))+'</span></li>').join('')
       +'</ul>';
-    if(isHost())h+=tableHtml('room',room.humans,bots.map(b=>b.level),room.players.length);
+    if(isHost())h+=tableHtml('room',room.humans,bots.map(b=>b.profile),room.players.length);
     const missing=room.humans-room.players.length;
     if(missing>0)h+='<p class="sub">Waiting for '+missing+' more player'+(missing>1?'s':'')
       +' to join from the lobby'+(seatCount>=2?' — or start now':'')+'…</p>';
@@ -588,7 +641,6 @@ function boardHtml(g,pi,me){
   let h='<div class="board'+(pi===g.active?' turn':'')+(acting?' acting':'')+'">';
   h+='<div class="board-head"><div><span class="pname">'+(p.kind==='ai'?'🤖 ':'')+esc(p.name)+'</span>'
     +(mine?'<span class="badge you">YOU</span>':'')
-    +(p.kind==='ai'?'<span class="badge bot">'+AI_LEVELS[p.level].tag+'</span>':'')
     +(pi===g.active?'<span class="badge">ROLLER</span>':'')+'</div>';
   if(mine&&!g.over&&g.phase==='white'&&!g.whiteDone[pi])
     h+='<button class="pass-btn" onclick="act(\'passWhite\')">Pass white</button>';

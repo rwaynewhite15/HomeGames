@@ -13,6 +13,7 @@ import json
 import os
 import random
 import socket
+import sys
 import threading
 import time
 import uuid
@@ -36,20 +37,43 @@ COLORS = ['red', 'yellow', 'green', 'blue']
 VARIANTS = {'standard', 'colors', 'numbers', 'both'}
 MAX_SEATS = 4
 
-# AI opponents. Each difficulty plays under its own name, so each one builds
-# its own ELO on the leaderboard alongside the humans.
-#   skip_cost — points it charges itself per cell given up by marking further right
-#   threshold — how good a mark has to look before it bothers
-#   noise     — randomness added to every candidate; high noise = careless
-AI_LEVELS = {
-    'easy':   {'title': 'Rookie Bot', 'tag': 'Easy',
-               'skip_cost': 0.3, 'threshold': -99.0, 'noise': 5.0},
-    'medium': {'title': 'Sharp Bot', 'tag': 'Medium',
-               'skip_cost': 0.9, 'threshold': -1.5, 'noise': 1.0},
-    'hard':   {'title': 'Ace Bot', 'tag': 'Hard',
-               'skip_cost': 1.2, 'threshold': -0.5, 'noise': 0.0},
-}
-AI_ORDER = ['easy', 'medium', 'hard']
+# AI opponents. There are no difficulty labels: each bot is just a named player
+# with its own brain, and its ELO on the leaderboard is what tells you how hard
+# it is to beat.
+#
+# Every bot carries two fixed handicaps decided at birth, neither of them
+# learnable — that is deliberate. Training tunes the weights below, so any
+# handicap the weights could compensate for would let every bot converge on the
+# same strength and flatten the ratings into noise. Measured the hard way: an
+# early build handicapped bots with value noise alone, and 84 rounds of
+# self-play turned the field into a coin flip, because good weights are simply
+# robust to noise.
+#
+#   blunder — share of decisions taken at random instead of judged. No weight
+#             vector recovers from throwing away a third of your turns.
+#   noise   — jitter on each judgement; flavour rather than handicap.
+AI_ROSTER_SIZE = 5
+AI_NAME_POOL = ['Domino', 'Pixel', 'Rusty', 'Cobalt', 'Juniper', 'Marbles',
+                'Ember', 'Waffles', 'Zigzag', 'Pepper', 'Comet', 'Biscuit',
+                'Sable', 'Tumbler', 'Nutmeg', 'Whisker', 'Bramble', 'Fig',
+                'Otter', 'Quill', 'Pebble', 'Sprocket', 'Clover', 'Mango']
+
+# The learnable brain.
+#   skip_cost    — points charged per cell given up by marking further right
+#   late_skip    — extra charge per skipped cell as a row fills up
+#   lock_bonus   — how much it covets the locking cell at the end of a row
+#   penalty_fear — value of dodging the −5 for an empty turn
+#   threshold    — how good a mark must look before it bothers marking at all
+WEIGHT_KEYS = ['skip_cost', 'late_skip', 'lock_bonus', 'penalty_fear', 'threshold']
+DEFAULT_WEIGHTS = {'skip_cost': 0.9, 'late_skip': 0.0, 'lock_bonus': 1.0,
+                   'penalty_fear': 5.0, 'threshold': -1.5}
+BIRTH_JITTER = {'skip_cost': 0.35, 'late_skip': 0.1, 'lock_bonus': 0.3,
+                'penalty_fear': 1.5, 'threshold': 1.2}
+WEIGHT_BOUNDS = {'skip_cost': (0.0, 4.0), 'late_skip': (0.0, 2.0),
+                 'lock_bonus': (0.0, 3.0), 'penalty_fear': (0.0, 12.0),
+                 'threshold': (-12.0, 6.0)}
+MUTATION = {'skip_cost': 0.25, 'late_skip': 0.15, 'lock_bonus': 0.25,
+            'penalty_fear': 1.0, 'threshold': 0.6}
 
 
 def build_rows(variant):
@@ -76,11 +100,15 @@ def build_rows(variant):
 
 class Quixx:
     def __init__(self, variant, seats):
-        """seats: 2–4 dicts of id / name / kind ('human'|'ai') / level."""
+        """seats: 2–4 dicts of id / name / kind ('human'|'ai') / profile."""
         self.variant = variant
         self.rows = build_rows(variant)
+        # brain snapshot at kickoff, so training mid-game can't change a game
         self.players = [{'cid': s['id'], 'name': s['name'],
-                         'kind': s.get('kind', 'human'), 'level': s.get('level'),
+                         'kind': s.get('kind', 'human'), 'profile': s.get('profile'),
+                         'weights': dict(s.get('weights') or DEFAULT_WEIGHTS),
+                         'blunder': float(s.get('blunder') or 0.0),
+                         'noise': float(s.get('noise') or 0.0),
                          'marks': [[False] * 11 for _ in range(4)],
                          'penalties': 0} for s in seats]
         self.active = 0
@@ -228,30 +256,39 @@ class Quixx:
         self.dice = None
 
     # ---- AI seats ----
-    def bot_value(self, p, r, i, bonus):
+    def bot_value(self, p, r, i, penalty_risk):
         """What an AI thinks marking (r, i) is worth, in points."""
-        cfg = AI_LEVELS[self.players[p]['level']]
+        pl = self.players[p]
+        w = pl['weights']
         skipped = i - self.last_marked(p, r) - 1
         c = self.count(p, r)
-        gain = POINTS[c + 1] - POINTS[c]
+        v = POINTS[c + 1] - POINTS[c]
         if i == 10:
-            gain += POINTS[min(c + 2, 12)] - POINTS[c + 1]   # locking scores twice
-        v = gain - cfg['skip_cost'] * skipped + bonus
-        if cfg['noise']:
-            v += random.uniform(-cfg['noise'], cfg['noise'])
+            v += w['lock_bonus'] * (POINTS[min(c + 2, 12)] - POINTS[c + 1])
+        v -= (w['skip_cost'] + w['late_skip'] * c / 5.0) * skipped
+        if penalty_risk:
+            v += w['penalty_fear']
+        if pl['noise']:
+            v += random.uniform(-pl['noise'], pl['noise'])
         return v
 
-    def bot_pick(self, p, mode, bonus):
+    def bot_pick(self, p, mode, penalty_risk):
         best, cell = None, None
         for (r, i) in self.options(p, mode):
-            v = self.bot_value(p, r, i, bonus)
+            v = self.bot_value(p, r, i, penalty_risk)
             if best is None or v > best:
                 best, cell = v, (r, i)
         return cell, best
 
-    def bot_take(self, p, mode, bonus):
-        cell, value = self.bot_pick(p, mode, bonus)
-        if cell is not None and value >= AI_LEVELS[self.players[p]['level']]['threshold']:
+    def bot_take(self, p, mode, penalty_risk):
+        if self.players[p]['blunder'] and random.random() < self.players[p]['blunder']:
+            opts = sorted(self.options(p, mode))
+            if opts:                      # careless: grabs one without thinking
+                r, i = random.choice(opts)
+                self.mark(self.players[p]['cid'], r, i)
+                return True
+        cell, value = self.bot_pick(p, mode, penalty_risk)
+        if cell is not None and value >= self.players[p]['weights']['threshold']:
             self.mark(self.players[p]['cid'], cell[0], cell[1])
         elif mode == 'white':
             self.pass_white(self.players[p]['cid'])
@@ -272,14 +309,13 @@ class Quixx:
         if self.phase == 'white':
             for i, p in enumerate(self.players):
                 if p['kind'] == 'ai' and not self.white_done[i]:
-                    return self.bot_take(i, 'white', 0.0)
+                    return self.bot_take(i, 'white', False)
             return False
         if self.phase == 'color':
             if self.players[self.active]['kind'] != 'ai':
                 return False
-            # an empty turn costs 5, so any mark is worth that much more
-            return self.bot_take(self.active, 'color',
-                                 0.0 if self.active_marked else 5.0)
+            # an empty turn costs 5, so a mark is worth penalty_fear more
+            return self.bot_take(self.active, 'color', not self.active_marked)
         return False
 
     # ---- scoring / end ----
@@ -324,7 +360,7 @@ class Quixx:
             'reason': self.end_reason,
             'players': [{'name': p['name'], 'score': self.total(i),
                          'penalties': p['penalties'], 'kind': p['kind'],
-                         'level': p['level'],
+                         'profile': p['profile'],
                          'forfeited': i == self.forfeit_idx}
                         for i, p in enumerate(self.players)],
         }
@@ -335,7 +371,7 @@ class Quixx:
             'variant': self.variant,
             'rows': self.rows,
             'players': [{'cid': p['cid'], 'name': p['name'], 'marks': p['marks'],
-                         'kind': p['kind'], 'level': p['level'],
+                         'kind': p['kind'], 'profile': p['profile'],
                          'penalties': p['penalties'], 'total': self.total(i),
                          'rowScores': [self.row_score(i, r) for r in range(4)]}
                         for i, p in enumerate(self.players)],
@@ -373,7 +409,7 @@ def iso_now():
 
 
 def blank_player(name):
-    return {'name': name, 'ai': False, 'level': None, 'firstSeen': iso_now(),
+    return {'name': name, 'ai': False, 'profile': None, 'firstSeen': iso_now(),
             'lastPlayed': None, 'games': {}}
 
 
@@ -482,7 +518,7 @@ def record_result(summary):
         pl['name'] = names[i]                   # keep the latest capitalisation
         pl['lastPlayed'] = iso_now()
         pl['ai'] = ps[i].get('kind') == 'ai'
-        pl['level'] = ps[i].get('level')
+        pl['profile'] = ps[i].get('profile')
         pl.setdefault('games', {})
         rec = normalize_record(pl['games'].setdefault(game, blank_record()))
         pl['games'][game] = rec
@@ -529,17 +565,24 @@ def record_result(summary):
                         'result': 'win' if won else ('tie' if tied else 'loss'),
                         'elo': rec['elo'], 'eloDelta': round(deltas[a], 1),
                         'forfeited': quit_[i], 'ai': ps[i].get('kind') == 'ai',
-                        'level': ps[i].get('level')})
+                        'profile': ps[i].get('profile')})
 
-    entries.sort(key=lambda e: e['place'])
-    STATS['history'].insert(0, {
-        'ts': iso_now(), 'game': game, 'variant': variant, 'seats': len(ps),
-        'reason': summary.get('reason'), 'players': entries})
-    del STATS['history'][HISTORY_MAX:]
+    # Self-play counts towards ratings and records — that is the whole point —
+    # but it stays out of the recent-games list so training cannot bury the
+    # games people actually played.
+    if not summary.get('selfPlay'):
+        entries.sort(key=lambda e: e['place'])
+        STATS['history'].insert(0, {
+            'ts': iso_now(), 'game': game, 'variant': variant, 'seats': len(ps),
+            'reason': summary.get('reason'), 'players': entries})
+        del STATS['history'][HISTORY_MAX:]
     save_stats()
 
 
 def leaderboard(game, limit=25):
+    # Bots from an older roster keep their record — the games people won
+    # against them really happened — but are flagged so the board can say so.
+    current = set(p['name'].lower() for p in roster())
     rows = []
     for key, pl in STATS['players'].items():
         rec = (pl.get('games') or {}).get(game)
@@ -547,7 +590,9 @@ def leaderboard(game, limit=25):
             continue
         rec = normalize_record(rec)
         rows.append({'name': pl.get('name') or key,
-                     'ai': bool(pl.get('ai')), 'level': pl.get('level'),
+                     'ai': bool(pl.get('ai')), 'profile': pl.get('profile'),
+                     'retired': bool(pl.get('ai')) and key.split(' ')[0] not in current
+                     and key not in current,
                      'elo': round(rec['elo'], 1), 'played': rec['played'],
                      'wins': rec['wins'], 'losses': rec['losses'],
                      'ties': rec['ties'], 'best': rec['bestScore'],
@@ -561,7 +606,8 @@ def leaderboard(game, limit=25):
 
 def stats_payload():
     return {'leaderboard': {g: leaderboard(g) for g in GAMES},
-            'recent': STATS['history'][:10]}
+            'recent': STATS['history'][:10],
+            'profiles': profiles_payload(), 'training': dict(TRAINING)}
 
 
 def record_room_result(r):
@@ -576,19 +622,319 @@ def record_room_result(r):
 
 
 # ============================================================
+#  AI profiles & self-play training — persisted to ai_profiles.json
+# ============================================================
+PROFILES_FILE = os.path.join(BASE, 'ai_profiles.json')
+PROFILES = {'version': 1, 'updated': None, 'profiles': {}}
+
+# Rounds are attempts, not gains: most are rejected, so a small run usually
+# changes nothing. 30 gives a 5-bot roster ~6 attempts each, which is where
+# improvements actually start showing up.
+DEFAULT_ROUNDS = 30
+MAX_ROUNDS = 200
+TRAIN_GAMES = 120        # games in a candidate's first screening
+CONFIRM_GAMES = 160      # a promising candidate has to prove it a second time
+ADOPT_EDGE = 0.545       # share needed to earn that second look
+CONFIRM_EDGE = 0.52      # share needed across both, to actually be adopted
+BASELINE_GAMES = 200     # games used to measure a profile against its original
+TRAINING = {'running': False, 'round': 0, 'rounds': 0, 'who': None,
+            'adopted': 0, 'games': 0, 'started': None, 'finished': None,
+            'log': []}
+
+
+def birth_weights():
+    w = {}
+    for k in WEIGHT_KEYS:
+        lo, hi = WEIGHT_BOUNDS[k]
+        w[k] = round(min(hi, max(lo, DEFAULT_WEIGHTS[k]
+                                 + random.gauss(0.0, BIRTH_JITTER[k]))), 3)
+    return w
+
+
+def new_roster():
+    """Mint a fresh field of bots: random names, and blunder rates spread
+    across the range so the ratings have something real to separate."""
+    names = random.sample(AI_NAME_POOL, AI_ROSTER_SIZE)
+    spread = [i / float(AI_ROSTER_SIZE - 1) for i in range(AI_ROSTER_SIZE)]
+    random.shuffle(spread)
+    profiles, order = {}, []
+    for n, share in zip(names, spread):
+        pid = 'ai_' + uuid.uuid4().hex[:8]
+        w = birth_weights()
+        profiles[pid] = {
+            'id': pid, 'name': n,
+            'blunder': round(0.02 + 0.33 * share, 3),
+            'noise': round(0.2 + 2.6 * share, 2),
+            'weights': w,
+            'baseline': dict(w),          # never changes: the yardstick
+            'generation': 0, 'trained': 0, 'adopted': 0, 'vsBaseline': None,
+            'born': iso_now(), 'history': []}
+        order.append(pid)
+    return {'version': 2, 'profiles': profiles, 'order': order}
+
+
+def load_profiles():
+    """Read ai_profiles.json; mint a new roster if it is missing or damaged."""
+    global PROFILES
+    try:
+        with open(PROFILES_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        data = None
+    fresh = (not isinstance(data, dict) or not isinstance(data.get('profiles'), dict)
+             or not data['profiles'] or data.get('version') != 2)
+    if fresh:
+        data = new_roster()
+    order = [p for p in (data.get('order') or []) if p in data['profiles']]
+    order += [p for p in sorted(data['profiles']) if p not in order]
+    data['order'] = order
+    for pid, p in data['profiles'].items():
+        p.setdefault('id', pid)
+        p.setdefault('name', pid)
+        p.setdefault('blunder', 0.1)
+        p.setdefault('noise', 1.0)
+        p.setdefault('generation', 0)
+        p.setdefault('trained', 0)
+        p.setdefault('adopted', 0)
+        p.setdefault('vsBaseline', None)
+        p.setdefault('born', iso_now())
+        p.setdefault('history', [])
+        p.setdefault('weights', dict(DEFAULT_WEIGHTS))
+        p.setdefault('baseline', dict(p['weights']))
+        for k in WEIGHT_KEYS:
+            lo, hi = WEIGHT_BOUNDS[k]
+            p['weights'][k] = min(hi, max(lo, float(p['weights'].get(k, DEFAULT_WEIGHTS[k]))))
+            p['baseline'].setdefault(k, DEFAULT_WEIGHTS[k])
+    data['version'] = 2
+    PROFILES = data
+    save_profiles()
+    return fresh
+
+
+def roster():
+    return [PROFILES['profiles'][p] for p in PROFILES['order']
+            if p in PROFILES['profiles']]
+
+
+def save_profiles():
+    PROFILES['updated'] = iso_now()
+    tmp = PROFILES_FILE + '.tmp'
+    try:
+        with open(tmp, 'w', encoding='utf-8') as f:
+            json.dump(PROFILES, f, indent=2)
+        os.replace(tmp, PROFILES_FILE)
+    except OSError as e:
+        print('  [ai] could not write %s: %s' % (PROFILES_FILE, e))
+
+
+def profile_seat(pid, name=None):
+    """A seat dict for one AI, carrying a snapshot of its brain."""
+    p = PROFILES['profiles'].get(pid)
+    if not p:
+        return None
+    return {'id': 'ai:' + pid, 'name': name or p['name'], 'kind': 'ai',
+            'profile': pid, 'weights': dict(p['weights']),
+            'blunder': p['blunder'], 'noise': p['noise']}
+
+
+def mutate(w):
+    out = {}
+    for k in WEIGHT_KEYS:
+        lo, hi = WEIGHT_BOUNDS[k]
+        out[k] = round(min(hi, max(lo, w[k] + random.gauss(0.0, MUTATION[k]))), 3)
+    return out
+
+
+def sim_seat(name, prof, weights):
+    """A throwaway seat used for unrated trial games."""
+    return {'id': 'sim:' + name, 'name': name, 'kind': 'ai', 'profile': prof['id'],
+            'weights': dict(weights), 'blunder': prof['blunder'],
+            'noise': prof['noise']}
+
+
+def sim_game(seats, variant=None):
+    """Play a table of AI out to the end, as fast as the CPU allows."""
+    g = Quixx(variant or random.choice(sorted(VARIANTS)), seats)
+    for _ in range(4000):
+        if not g.bot_step():
+            break
+    return g
+
+
+def match(prof, wa, wb, games):
+    """Unrated head-to-head between two brains wearing the same bot's
+    handicaps. Returns wa's score share, seats alternated so going first is
+    not an advantage."""
+    pts = 0.0
+    for i in range(games):
+        ia = i % 2
+        ws = [None, None]
+        ws[ia], ws[1 - ia] = wa, wb
+        g = sim_game([sim_seat('S0', prof, ws[0]), sim_seat('S1', prof, ws[1])])
+        ta, tb = g.total(ia), g.total(1 - ia)
+        pts += 0.5 if ta == tb else (1.0 if ta > tb else 0.0)
+    return pts / games
+
+
+def train_round(pid):
+    """One hill-climbing step: mutate, screen the mutant against the incumbent,
+    and if it looks good make it prove that again on fresh games before it is
+    adopted. A single 120-game screen is only about one standard error wide, so
+    without the second look a coin-flip mutation gets adopted on luck often
+    enough to walk a bot backwards."""
+    with LOCK:
+        prof = dict(PROFILES['profiles'][pid])
+        base = dict(prof['weights'])
+    cand = mutate(base)
+    share = match(prof, cand, base, TRAIN_GAMES)           # slow, runs unlocked
+    played = TRAIN_GAMES
+    if share >= ADOPT_EDGE:
+        again = match(prof, cand, base, CONFIRM_GAMES)
+        share = ((share * TRAIN_GAMES + again * CONFIRM_GAMES)
+                 / float(TRAIN_GAMES + CONFIRM_GAMES))
+        played += CONFIRM_GAMES
+    with LOCK:
+        prof = PROFILES['profiles'][pid]
+        prof['trained'] += played
+        adopted = played > TRAIN_GAMES and share >= CONFIRM_EDGE
+        if adopted:
+            prof['weights'] = cand
+            prof['generation'] += 1
+            prof['adopted'] += 1
+            prof['history'].insert(0, {'ts': iso_now(), 'generation': prof['generation'],
+                                       'share': round(share, 3), 'weights': cand})
+            del prof['history'][30:]
+        save_profiles()
+    return share, adopted, played
+
+
+def measure_baseline(pid):
+    """How a bot's current brain fares against the one it was born with."""
+    with LOCK:
+        prof = dict(PROFILES['profiles'][pid])
+        cur, base = dict(prof['weights']), dict(prof['baseline'])
+    share = match(prof, cur, base, BASELINE_GAMES)
+    with LOCK:
+        PROFILES['profiles'][pid]['vsBaseline'] = round(share, 3)
+        save_profiles()
+    return share
+
+
+def ladder_game():
+    """One *rated* AI-vs-AI game. Goes through the normal stats path, so the
+    bots' ELOs move against each other exactly like human games do."""
+    with LOCK:
+        pool = PROFILES['order'][:]
+    if len(pool) < 2:
+        return None
+    picks = random.sample(pool, random.randint(2, min(MAX_SEATS, len(pool))))
+    with LOCK:
+        seats = [profile_seat(p) for p in picks]
+    seats = [s for s in seats if s]
+    if len(seats) < 2:
+        return None
+    g = sim_game(seats)
+    summary = g.result_summary()
+    summary['selfPlay'] = True
+    with LOCK:
+        record_result(summary)
+    return g
+
+
+def run_training(rounds, ladder=4, verbose=False):
+    """Work through the roster: one hill-climbing round per bot, then a few
+    rated games so the ratings keep moving. Safe to run off-thread."""
+    for i in range(rounds):
+        if not TRAINING['running']:
+            break
+        with LOCK:
+            order = PROFILES['order'][:]
+        if not order:
+            break
+        pid = order[i % len(order)]
+        name = PROFILES['profiles'][pid]['name']
+        with LOCK:
+            TRAINING['round'] = i + 1
+            TRAINING['who'] = name
+        share, adopted, played = train_round(pid)
+        for _ in range(ladder):
+            ladder_game()
+        line = '%s %s (%d%% in trials)' % (
+            name, 'improved' if adopted else 'held its ground', round(share * 100))
+        with LOCK:
+            TRAINING['games'] += played + ladder
+            TRAINING['adopted'] += 1 if adopted else 0
+            TRAINING['log'].insert(0, line)
+            del TRAINING['log'][6:]
+            broadcast_stats()
+        if verbose:
+            print('  round %d/%d — %s' % (i + 1, rounds, line))
+    with LOCK:
+        order = PROFILES['order'][:]
+    for pid in order:
+        if not TRAINING['running']:
+            break
+        share = measure_baseline(pid)
+        if verbose:
+            print('  %s vs. the brain it was born with: %d%%'
+                  % (PROFILES['profiles'][pid]['name'], round(share * 100)))
+
+
+def calibrate(games=90):
+    """A quick rated ladder so a brand-new roster has meaningful ratings the
+    first time anyone looks at the leaderboard."""
+    for _ in range(games):
+        ladder_game()
+    with LOCK:
+        broadcast_stats()
+
+
+def train_worker(rounds, ladder):
+    try:
+        run_training(rounds, ladder)
+    finally:
+        with LOCK:
+            TRAINING['running'] = False
+            TRAINING['who'] = None
+            TRAINING['finished'] = iso_now()
+            save_profiles()
+            broadcast_stats()
+
+
+def profiles_payload():
+    """The AI roster with the rating each has actually earned — no difficulty
+    labels, the ELO is the difficulty."""
+    rated = {}
+    for key, pl in STATS['players'].items():
+        rec = (pl.get('games') or {}).get('quixx')
+        if rec and rec.get('played'):
+            rated[key] = (round(rec['elo'], 1), rec['played'])
+    out = []
+    for p in roster():
+        elo, played = rated.get(p['name'].lower(), (None, 0))
+        out.append({'id': p['id'], 'name': p['name'], 'elo': elo, 'played': played,
+                    'generation': p['generation'], 'trained': p['trained'],
+                    'adopted': p['adopted'], 'vsBaseline': p.get('vsBaseline'),
+                    'weights': p['weights']})
+    out.sort(key=lambda r: (r['elo'] is None, -(r['elo'] or 0)))
+    return out
+
+
+# ============================================================
 #  Lobby / rooms
 # ============================================================
 
-def make_bots(levels):
-    """Turn a list of difficulties into seated AI players. A repeated level is
-    numbered, so each bot at the table is a distinct name (and rating)."""
+def make_bots(ids):
+    """Seat the chosen bots. The same bot picked twice is numbered, so each
+    seat at the table is a distinct name (and a distinct rating)."""
     out, counts = [], {}
-    for lv in levels:
-        counts[lv] = counts.get(lv, 0) + 1
-        title = AI_LEVELS[lv]['title']
-        if counts[lv] > 1:
-            title += ' %d' % counts[lv]
-        out.append({'id': 'ai:%s:%d' % (lv, counts[lv]), 'level': lv, 'name': title})
+    for pid in ids:
+        p = PROFILES['profiles'].get(pid)
+        if not p:
+            continue
+        counts[pid] = counts.get(pid, 0) + 1
+        name = p['name'] if counts[pid] == 1 else '%s %d' % (p['name'], counts[pid])
+        out.append({'id': 'ai:%s:%d' % (pid, counts[pid]), 'profile': pid, 'name': name})
     return out
 
 
@@ -596,8 +942,11 @@ def room_seats(r):
     """Turn order: humans in the order they joined, then the AI seats."""
     out = [{'id': c, 'name': CLIENTS[c]['name'], 'kind': 'human'}
            for c in r['players'] if c in CLIENTS]
-    out += [{'id': b['id'], 'name': b['name'], 'kind': 'ai', 'level': b['level']}
-            for b in r['bots']]
+    for b in r['bots']:
+        seat = profile_seat(b['profile'], b['name'])
+        if seat:
+            seat['id'] = b['id']
+            out.append(seat)
     return out
 
 
@@ -615,31 +964,31 @@ def parse_table(body, joined):
         humans = int(body.get('humans', 2))
     except (TypeError, ValueError):
         raise ValueError('Bad number of human players.')
-    levels = body.get('bots')
-    if levels is None:
-        levels = []
-    if not isinstance(levels, list) or len(levels) > MAX_SEATS:
+    picks = body.get('bots')
+    if picks is None:
+        picks = []
+    if not isinstance(picks, list) or len(picks) > MAX_SEATS:
         raise ValueError('Bad AI list.')
-    levels = [str(x) for x in levels]
-    for lv in levels:
-        if lv not in AI_LEVELS:
-            raise ValueError('Unknown AI difficulty.')
+    picks = [str(x) for x in picks]
+    for pid in picks:
+        if pid not in PROFILES['profiles']:
+            raise ValueError('Unknown AI player.')
     if humans < 1 or humans > MAX_SEATS:
         raise ValueError('Humans must be between 1 and %d.' % MAX_SEATS)
     if humans < joined:
         raise ValueError('%d players have already joined.' % joined)
-    if humans + len(levels) > MAX_SEATS:
+    if humans + len(picks) > MAX_SEATS:
         raise ValueError('That is more than %d seats.' % MAX_SEATS)
-    if humans + len(levels) < 2:
+    if humans + len(picks) < 2:
         raise ValueError('A game needs at least 2 seats.')
-    return humans, levels
+    return humans, picks
 
 
 def room_summary(r):
     return {'id': r['id'], 'name': r['name'], 'game': r['game'],
             'gameTitle': GAMES[r['game']]['title'], 'variant': r['variant'],
             'status': r['status'], 'humans': r['humans'], 'maxSeats': MAX_SEATS,
-            'bots': [{'level': b['level'], 'name': b['name']} for b in r['bots']],
+            'bots': [{'profile': b['profile'], 'name': b['name']} for b in r['bots']],
             'players': [CLIENTS[c]['name'] for c in r['players'] if c in CLIENTS],
             'spectators': len(r['spectators']),
             'host': CLIENTS.get(r['host'], {}).get('name', '?')}
@@ -874,6 +1223,30 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({'ok': True, 'stats': stats_payload()})
             return
 
+        if cmd == 'train':
+            if body.get('stop'):
+                TRAINING['running'] = False
+                broadcast_stats()
+                self.send_json({'ok': True})
+                return
+            if TRAINING['running']:
+                self.err('Training is already running.')
+                return
+            try:
+                rounds = int(body.get('rounds') or DEFAULT_ROUNDS)
+            except (TypeError, ValueError):
+                rounds = DEFAULT_ROUNDS
+            rounds = max(1, min(MAX_ROUNDS, rounds))
+            ladder = max(0, min(20, int(body.get('ladder') or 4)))
+            TRAINING.update({'running': True, 'round': 0, 'rounds': rounds,
+                             'who': None, 'adopted': 0, 'games': 0,
+                             'started': iso_now(), 'finished': None, 'log': []})
+            threading.Thread(target=train_worker, args=(rounds, ladder),
+                             daemon=True).start()
+            broadcast_stats()
+            self.send_json({'ok': True})
+            return
+
         # everything below needs a known client
         cid = str(body.get('cid') or '')
         c = CLIENTS.get(cid)
@@ -1022,8 +1395,53 @@ class Handler(BaseHTTPRequestHandler):
         self.err('Not found', 404)
 
 
-def main():
+def train_cli(rounds):
+    """python homegames_server.py --train [rounds] — bulk training, no server."""
     load_stats()
+    if load_profiles():
+        print('  Minted a new roster: %s'
+              % ', '.join(p['name'] for p in roster()))
+    print('\n  Training the AI by self-play: %d rounds '
+          '(%d trial games each, plus rated ladder games).\n' % (rounds, TRAIN_GAMES))
+    TRAINING.update({'running': True, 'rounds': rounds, 'round': 0,
+                     'adopted': 0, 'games': 0, 'started': iso_now()})
+    start = time.time()
+    try:
+        run_training(rounds, ladder=4, verbose=True)
+    except KeyboardInterrupt:
+        print('\n  Stopped early — progress so far is saved.')
+    finally:
+        TRAINING['running'] = False
+        save_profiles()
+    print('\n  %d rounds, %d improvements, %d games, %.0fs.'
+          % (TRAINING['round'], TRAINING['adopted'], TRAINING['games'],
+             time.time() - start))
+    print('  Ratings after self-play:')
+    for row in profiles_payload():
+        print('    %-12s elo %-8s %d rated games'
+              % (row['name'], row['elo'] if row['elo'] is not None else '—',
+                 row['played']))
+    print()
+
+
+def main():
+    args = sys.argv[1:]
+    if args and args[0] == '--train':
+        try:
+            rounds = int(args[1]) if len(args) > 1 else DEFAULT_ROUNDS
+        except ValueError:
+            rounds = DEFAULT_ROUNDS
+        train_cli(max(1, min(500, rounds)))
+        return
+    load_stats()
+    fresh = load_profiles()
+    if fresh:
+        # a brand-new roster has no ratings yet, and an unrated bot tells you
+        # nothing about how hard it is — so play them in before anyone looks
+        TRAINING['running'] = True
+        threading.Thread(target=lambda: (calibrate(),
+                                         TRAINING.update({'running': False})),
+                         daemon=True).start()
     server = ThreadingHTTPServer(('', PORT), Handler)
     server.daemon_threads = True
     ip = lan_ip()
@@ -1036,6 +1454,10 @@ def main():
     print('  Share the network address with other players.')
     print('  Stats & ELO: %s (%d players tracked)'
           % (os.path.basename(STATS_FILE), len(STATS['players'])))
+    print('  AI roster:   %s' % ', '.join(p['name'] for p in roster()))
+    if fresh:
+        print('               (new — playing calibration games to rate them)')
+    print('  Bulk-train with:  python homegames_server.py --train 30')
     print('  Press Ctrl+C to stop.')
     print()
     try:
