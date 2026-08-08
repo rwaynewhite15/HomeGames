@@ -54,6 +54,21 @@
   .person .pn{font-weight:700;}
   .person .pw{color:#888;font-size:.85em;margin-left:auto;text-align:right;}
 
+  /* scoring rubric + column help */
+  .sheet-img{width:100%;border-radius:12px;border:1px solid #e6e2da;margin:8px 0;display:block;}
+  .rubric{display:flex;gap:4px;flex-wrap:wrap;margin:10px 0;}
+  .rub{background:#faf8f4;border:1px solid #e6e2da;border-radius:8px;padding:5px 7px;
+    text-align:center;min-width:42px;}
+  .rub b{display:block;font-size:1.02em;}
+  .rub span{color:#999;font-size:.72em;}
+  th[title],.hashelp{cursor:help;border-bottom:1px dotted #b9b9b9;}
+  .score-pill.clickable{cursor:pointer;border:none;font-family:inherit;font-size:inherit;}
+  .score-pill.clickable:hover{background:var(--blue);}
+  .brk{text-align:left;font-size:.93em;margin:10px 0 4px;}
+  .brk div{display:flex;justify-content:space-between;gap:10px;padding:7px 4px;border-bottom:1px solid #eee;}
+  .brk .tot{border-bottom:none;font-weight:700;font-size:1.08em;padding-top:12px;}
+  .brk .swatch{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;}
+
   /* player profile card */
   .prof-head{display:flex;align-items:center;gap:10px;margin-bottom:4px;}
   .prof-elo{margin-left:auto;background:var(--ink);color:#fff;border-radius:20px;padding:5px 14px;font-weight:700;}
@@ -321,6 +336,8 @@
     <p><b>Game over:</b> 2 locked rows, or someone's 4th penalty. Most points wins.</p>
     <p><b>Players:</b> 2 to 4 seats, in any mix of people and AI. The host sets the table before hosting and can still change it in the waiting room.</p>
     <p><b>The AI:</b> each bot is just a named player with its own rating — there are no difficulty labels, because the <b>ELO next to its name is the difficulty</b>. They train by playing each other, so those ratings drift as they get better, and beating a highly rated one is worth more.</p>
+    <h3 style="margin:16px 0 6px">Scoring</h3>
+    <div id="scoreRubric"></div>
     <p style="color:#777;font-size:.85em"><b>Variants:</b> Mixed Numbers scrambles each row's number order. Mixed Colors scrambles cell colors — colored dice mark cells of their color wherever they sit, and locking a row removes the die matching its last cell's color.</p>
     <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
   </div>
@@ -366,6 +383,7 @@ function esc(s){return String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','
 function show(v){['v-join','v-hub','v-lobby','v-room'].forEach(x=>$(x).classList.remove('show'));$(v).classList.add('show');}
 function showRules(){
   const gk=(room&&room.game)||curGame||'quixx';
+  renderRubric();
   $('rulesQuixx').style.display=(gk==='quixx')?'':'none';
   $('rulesMancala').style.display=(gk==='mancala')?'':'none';
   $('rulesOverlay').classList.add('show');
@@ -593,6 +611,68 @@ function renderLobbySetup(){
   $('lobbySetup').innerHTML=tableHtml('lobby',cfgHumans,cfgBots,1);
 }
 
+/* ---------- column help + scoring rubric ---------- */
+const HELP={
+  rank:'Position on this leaderboard, highest rating first.',
+  player:'Tap a name to open their full profile.',
+  elo:'Rating. Everyone starts at 1200. Beating someone rated above you gains more than beating someone below.',
+  wlt:'Wins, losses and ties across finished games.',
+  best:'Highest score in a single game.',
+  avg:'Average score per game.',
+  streak:'Current run — 🔥 is wins in a row, ❄ is losses.',
+  bot:'The AI player. Tap for its profile.',
+  rated:'Games that counted towards its rating, self-play included.',
+  gen:'How many times training has replaced its brain with a better one.',
+  trained:'Practice games played while tuning that brain. These do not affect its rating.',
+  birth:'How it now scores against the brain it was born with. Above 50% means training improved it.'
+};
+function th(label,key){return '<th title="'+esc(HELP[key]||'')+'">'+label+'</th>';}
+
+function renderRubric(){
+  const el=$('scoreRubric');if(!el)return;
+  const g=(catalogue.filter(x=>x.key==='quixx')[0])||{};
+  const pts=g.points||[],pen=g.penalty||5;
+  let h='';
+  if(g.sheet)h+='<img class="sheet-img" src="'+esc(g.sheet)+'" alt="Qwixx score sheet showing the points table">';
+  if(pts.length){
+    h+='<div class="rubric">';
+    for(let n=1;n<pts.length;n++)
+      h+='<div class="rub"><b>'+pts[n]+'</b><span>'+n+'✕</span></div>';
+    h+='</div>';
+  }
+  h+='<p style="font-size:.86em;color:#777;margin:6px 0 0">A row scores by how many ✕ it holds — '
+    +'locking counts as one extra ✕. Each penalty is −'+pen+'. '
+    +'<b>Total = red + yellow + green + blue − penalties.</b> '
+    +'Tap any score during a game to see it broken down.</p>';
+  el.innerHTML=h;
+}
+
+/* ---------- how a score was built ---------- */
+function showScore(pi){
+  const g=room&&room.state;if(!g)return;
+  const p=g.players[pi];
+  let h='<h2 style="margin:0 0 2px">'+(p.kind==='ai'?'🤖 ':'')+esc(p.name)+'</h2>'
+    +'<p class="sub" style="margin:0 0 4px">Where that score comes from</p><div class="brk">';
+  if(g.kind==='mancala'){
+    h+='<div><span>Stones banked in the store</span><b>'+p.total+'</b></div>';
+  }else{
+    for(let r=0;r<4;r++){
+      const marks=p.marks[r].filter(Boolean).length;
+      const locked=p.marks[r][10];
+      const col=g.rows[r][10].color;
+      h+='<div><span><span class="swatch" style="background:var(--'+col+')"></span>'
+        +esc(CNAME[col]||('Row '+(r+1)))+' — '+marks+' ✕'
+        +(locked?' + lock ✕':'')+' <span style="color:#aaa">('+(marks+(locked?1:0))+' total)</span></span>'
+        +'<b>'+p.rowScores[r]+'</b></div>';
+    }
+    if(p.penalties)
+      h+='<div><span>Penalties — '+p.penalties+' × −5</span><b>−'+(5*p.penalties)+'</b></div>';
+  }
+  h+='<div class="tot"><span>Total</span><b>'+p.total+'</b></div></div>';
+  $('playerBody').innerHTML=h;
+  $('playerOverlay').classList.add('show');
+}
+
 /* ---------- player profile ---------- */
 async function showPlayer(encName){
   const name=decodeURIComponent(encName);
@@ -643,8 +723,9 @@ function renderAI(){
   let h='';
   if(!ps.length)h+='<div class="empty">No AI yet.</div>';
   else{
-    h+='<table class="lb"><tr><th>Bot</th><th>ELO</th><th>Rated games</th>'
-      +'<th>Gen</th><th>Trained on</th><th>vs. birth</th></tr>';
+    h+='<table class="lb"><tr>'+th('Bot','bot')+th('ELO','elo')
+      +th('Rated games','rated')+th('Gen','gen')+th('Trained on','trained')
+      +th('vs. birth','birth')+'</tr>';
     ps.forEach(p=>{
       h+='<tr><td>🤖 <b>'+esc(p.name)+'</b></td>'
         +'<td class="elo">'+(p.elo==null?'—':p.elo)+'</td>'
@@ -684,8 +765,9 @@ function renderStats(){
   renderAI();
   const rows=(stats&&stats.leaderboard&&stats.leaderboard[curGame||'quixx'])||[];
   if(!rows.length){el.innerHTML='<div class="empty">No finished games yet — play one!</div>';return;}
-  let h='<table class="lb"><tr><th class="rank">#</th><th>Player</th><th>ELO</th>'
-    +'<th>W&#8209;L&#8209;T</th><th>Best</th><th>Avg</th><th>Streak</th></tr>';
+  let h='<table class="lb"><tr><th class="rank" title="'+esc(HELP.rank)+'">#</th>'
+    +th('Player','player')+th('ELO','elo')+th('W&#8209;L&#8209;T','wlt')
+    +th('Best','best')+th('Avg','avg')+th('Streak','streak')+'</tr>';
   rows.forEach((r,i)=>{
     const mine=!r.ai&&myName&&r.name.toLowerCase()===myName.toLowerCase();
     h+='<tr'+(mine?' class="me"':'')+'><td class="rank">'+(i+1)+'</td>'
@@ -895,8 +977,10 @@ function renderMancala(g,me,body){
   h+='</div>';
 
   h+='<div class="sheet-foot"><span style="color:#777">Stones in store:</span>'
-    +'<span class="score-pill">'+esc(mine.name)+' '+g.board[mine.store]+'</span>'
-    +'<span class="score-pill" style="background:#8a8a8a">'+esc(theirs.name)+' '+g.board[theirs.store]+'</span></div>';
+    +'<button class="score-pill clickable" onclick="showScore('+seat+')">'
+    +esc(mine.name)+' '+g.board[mine.store]+'</button>'
+    +'<button class="score-pill clickable" style="background:#8a8a8a" onclick="showScore('+opp+')">'
+    +esc(theirs.name)+' '+g.board[theirs.store]+'</button></div>';
   body.innerHTML=h;
 
   if(g.over&&endShownFor!==room.id+g.reason){
@@ -957,7 +1041,8 @@ function boardHtml(g,pi,me){
   }
   h+='<div class="sheet-foot"><span style="color:#777">Penalties:</span>';
   for(let i=0;i<4;i++)h+='<span class="pen-box">'+(i<p.penalties?'✕':'')+'</span>';
-  h+='<span class="score-pill">'+p.total+' pts</span></div></div>';
+  h+='<button class="score-pill clickable" title="How is this worked out?" '
+    +'onclick="showScore('+pi+')">'+p.total+' pts</button></div></div>';
   return h;
 }
 

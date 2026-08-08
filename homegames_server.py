@@ -655,6 +655,7 @@ class Mancala:
 GAMES = {
     'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx,
               'icon': '🎲', 'variants': VARIANTS,
+              'points': POINTS, 'penalty': 5, 'sheet': 'quixx-scoresheet.png',
               'vnames': {'standard': 'Standard', 'colors': 'Mixed Colors',
                          'numbers': 'Mixed Numbers', 'both': 'Both Mixed'},
               'blurb': 'Roll, cross off numbers left to right, lock a row '
@@ -1315,6 +1316,8 @@ def games_payload():
                     'blurb': g.get('blurb', ''), 'min': g['min'], 'max': g['max'],
                     'variants': sorted(g.get('variants', VARIANTS)),
                     'vnames': g.get('vnames', {}),
+                    'points': g.get('points'), 'penalty': g.get('penalty'),
+                    'sheet': g.get('sheet'),
                     'open': len([r for r in rooms if r['status'] == 'waiting']),
                     'playing': len([r for r in rooms if r['status'] == 'playing']),
                     'here': len([c for c in CLIENTS.values()
@@ -1500,7 +1503,37 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Content-Length', '0')
             self.end_headers()
         else:
+            self.send_asset(u.path)
+
+    ASSET_TYPES = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+                   '.gif': 'image/gif', '.svg': 'image/svg+xml',
+                   '.css': 'text/css', '.js': 'application/javascript'}
+
+    def send_asset(self, path):
+        """Serve a file sitting next to the server. Only the basename is used
+        and the result must still live in BASE, so no request can climb out of
+        the folder."""
+        name = os.path.basename(path)
+        ext = os.path.splitext(name)[1].lower()
+        if not name or ext not in self.ASSET_TYPES:
             self.err('Not found', 404)
+            return
+        full = os.path.abspath(os.path.join(BASE, name))
+        if os.path.dirname(full) != os.path.abspath(BASE) or not os.path.isfile(full):
+            self.err('Not found', 404)
+            return
+        try:
+            with open(full, 'rb') as f:
+                body = f.read()
+        except OSError:
+            self.err('Not found', 404)
+            return
+        self.send_response(200)
+        self.send_header('Content-Type', self.ASSET_TYPES[ext])
+        self.send_header('Content-Length', str(len(body)))
+        self.send_header('Cache-Control', 'max-age=3600')
+        self.end_headers()
+        self.wfile.write(body)
 
     def handle_sse(self, u):
         qs = parse_qs(u.query)
