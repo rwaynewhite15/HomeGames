@@ -597,8 +597,6 @@ def leaderboard(game, limit=25):
                      'wins': rec['wins'], 'losses': rec['losses'],
                      'ties': rec['ties'], 'best': rec['bestScore'],
                      'avg': round(rec['pointsFor'] / rec['played'], 1),
-                     'avgPlace': (round(rec['placeSum'] / rec['played'], 2)
-                                  if rec['placeSum'] else None),
                      'streak': rec['streak'], 'lastPlayed': pl.get('lastPlayed')})
     rows.sort(key=lambda r: (-r['elo'], -r['wins'], r['name'].lower()))
     return rows[:limit]

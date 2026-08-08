@@ -465,7 +465,7 @@ function renderStats(){
   const rows=(stats&&stats.leaderboard&&stats.leaderboard.quixx)||[];
   if(!rows.length){el.innerHTML='<div class="empty">No finished games yet — play one!</div>';return;}
   let h='<table class="lb"><tr><th class="rank">#</th><th>Player</th><th>ELO</th>'
-    +'<th>W&#8209;L&#8209;T</th><th>Best</th><th>Avg</th><th>Place</th><th>Streak</th></tr>';
+    +'<th>W&#8209;L&#8209;T</th><th>Best</th><th>Avg</th><th>Streak</th></tr>';
   rows.forEach((r,i)=>{
     const mine=!r.ai&&myName&&r.name.toLowerCase()===myName.toLowerCase();
     h+='<tr'+(mine?' class="me"':'')+'><td class="rank">'+(i+1)+'</td>'
@@ -474,7 +474,6 @@ function renderStats(){
       +'</td><td class="elo">'+r.elo+'</td>'
       +'<td>'+r.wins+'&#8209;'+r.losses+'&#8209;'+r.ties+'</td>'
       +'<td>'+r.best+'</td><td>'+r.avg+'</td>'
-      +'<td>'+(r.avgPlace==null?'—':r.avgPlace)+'</td>'
       +'<td>'+streakTxt(r.streak)+'</td></tr>';
   });
   h+='</table>';
