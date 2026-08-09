@@ -209,6 +209,109 @@
   .pit.pickable{cursor:pointer;border-color:#ffd76e;animation:pulse 1s infinite;}
   .pit.theirs{border-color:rgba(255,255,255,.25);}
 
+  /* ---------- euchre ---------- */
+  .felt{position:relative;background:
+      radial-gradient(ellipse at 50% 42%,#3f8f63 0%,#2f7350 58%,#245c40 100%);
+    border-radius:24px;padding:12px;margin-bottom:14px;color:#fff;
+    box-shadow:inset 0 2px 14px rgba(0,0,0,.35),0 1px 0 #fff;
+    border:6px solid #6f4826;min-height:340px;
+    display:grid;gap:6px;
+    grid-template-columns:1fr minmax(0,2fr) 1fr;
+    grid-template-rows:auto 1fr auto;
+    grid-template-areas:"n n n" "w c e" "s s s";}
+  .st-n{grid-area:n;justify-self:center;}
+  .st-w{grid-area:w;align-self:center;justify-self:start;}
+  .st-e{grid-area:e;align-self:center;justify-self:end;}
+  .st-s{grid-area:s;justify-self:center;}
+  .st-c{grid-area:c;position:relative;display:flex;align-items:center;justify-content:center;}
+
+  .eseat{text-align:center;font-size:.82em;max-width:130px;}
+  .eseat .en{font-weight:700;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .eseat .em{opacity:.8;font-size:.85em;}
+  .eseat.turn .en{color:#ffe08a;}
+  .eseat.turn{filter:drop-shadow(0 0 6px rgba(255,224,138,.7));}
+  .eseat.out{opacity:.4;}
+  .ebacks{display:flex;justify-content:center;gap:-6px;margin:3px 0;min-height:38px;}
+  .ebacks .pcard{margin-left:-16px;}
+  .ebacks .pcard:first-child{margin-left:0;}
+  .etag{display:inline-block;font-size:.9em;background:rgba(0,0,0,.28);border-radius:10px;
+    padding:1px 7px;margin-left:4px;}
+  .etag.dealer{background:#f0e6d2;color:#3b3b3b;font-weight:700;}
+  .etag.maker{background:#ffd76e;color:#3b3b3b;font-weight:700;}
+  .etag.you{background:var(--blue);}
+
+  /* a playing card */
+  .pcard{width:52px;height:74px;border-radius:7px;background:#fff;color:#1d1d22;
+    border:1px solid #cfc9bd;box-shadow:0 2px 5px rgba(0,0,0,.32);position:relative;
+    flex:none;display:block;padding:0;font-family:'Segoe UI',system-ui,sans-serif;}
+  .pcard .ix{position:absolute;top:3px;left:4px;font-size:.72em;font-weight:800;line-height:1;text-align:center;}
+  .pcard .ix i{display:block;font-style:normal;font-size:1.05em;}
+  .pcard .mid{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:1.7em;line-height:1;}
+  .pcard.red{color:#c8102e;}
+  .pcard.sm{width:38px;height:54px;}
+  .pcard.sm .mid{font-size:1.15em;}
+  .pcard.sm .ix{font-size:.6em;}
+  .pcard.back{background:repeating-linear-gradient(45deg,#3f6fc4 0,#3f6fc4 4px,#2f5399 4px,#2f5399 8px);
+    border-color:#24407a;}
+  .pcard.back .mid,.pcard.back .ix{display:none;}
+  .pcard.playable{cursor:pointer;transition:transform .12s,box-shadow .12s;}
+  .pcard.playable:hover{transform:translateY(-10px);box-shadow:0 8px 14px rgba(0,0,0,.4);}
+  .pcard.dim{opacity:.42;filter:grayscale(.55);}
+  .pcard.win{outline:3px solid #ffd76e;outline-offset:1px;}
+
+  /* the trick in the middle */
+  .trick{position:relative;width:150px;height:150px;}
+  .trick .pcard{position:absolute;top:50%;left:50%;margin:-37px 0 0 -26px;
+    transition:transform .18s;}
+  .trick .tk-0{transform:translateY(34px);}      /* south */
+  .trick .tk-1{transform:translateX(40px) rotate(6deg);}
+  .trick .tk-2{transform:translateY(-34px) rotate(-3deg);}
+  .trick .tk-3{transform:translateX(-40px) rotate(-6deg);}
+
+  .eband{display:flex;align-items:center;justify-content:center;gap:8px;flex-wrap:wrap;
+    margin-bottom:8px;font-size:.9em;}
+  .trumpchip{background:#fff;color:#1d1d22;border-radius:20px;padding:3px 12px;font-weight:700;
+    box-shadow:0 1px 3px rgba(0,0,0,.3);}
+  .trumpchip.red{color:#c8102e;}
+  .trumpchip.none{background:rgba(255,255,255,.22);color:#fff;box-shadow:none;font-weight:600;}
+  .escore{display:flex;gap:8px;justify-content:center;margin-bottom:10px;}
+  .escore div{background:#fff;border:1px solid #e6e2da;border-radius:12px;padding:7px 14px;
+    text-align:center;min-width:96px;}
+  .escore b{display:block;font-size:1.45em;line-height:1.1;}
+  .escore span{font-size:.72em;color:#888;}
+  .escore .us{border-color:var(--blue);}
+  .escore .them{border-color:var(--red);}
+  .escore .tk{font-size:.72em;color:#888;}
+
+  .ehand{display:flex;justify-content:center;gap:6px;flex-wrap:wrap;padding-top:4px;min-height:80px;}
+  .ehand .pcard{width:60px;height:86px;}
+  .ehand .pcard .mid{font-size:2em;}
+  .ehand .pcard .ix{font-size:.8em;}
+  .bidbar{background:#fff;color:var(--ink);border-radius:14px;padding:12px;margin-bottom:12px;
+    border:1px solid #e6e2da;text-align:center;}
+  .bidbar .q{font-weight:700;margin-bottom:8px;}
+  .bidbar .row{display:flex;gap:8px;justify-content:center;flex-wrap:wrap;}
+  .bidbtn{padding:9px 16px;font-weight:700;background:var(--ink);color:#fff;font-size:.92em;}
+  .bidbtn.suit{background:#fff;color:#1d1d22;border:2px solid #d8d2c6;font-size:1.05em;}
+  .bidbtn.suit.red{color:#c8102e;}
+  .bidbtn.suit:hover{border-color:var(--blue);}
+  .bidbtn.pass{background:#eee;color:#555;}
+  .alonebox{display:inline-flex;align-items:center;gap:6px;margin-top:9px;font-size:.88em;color:#666;}
+  .ewait{text-align:center;font-size:.9em;opacity:.85;padding:6px;}
+  .handbanner{background:rgba(0,0,0,.62);border-radius:14px;padding:10px 16px;text-align:center;
+    font-weight:600;margin-bottom:8px;}
+  @media(max-width:560px){
+    .felt{padding:8px;min-height:300px;border-width:4px;}
+    .pcard{width:44px;height:63px;}
+    .pcard .mid{font-size:1.4em;}
+    .ehand .pcard{width:50px;height:72px;}
+    .ehand .pcard .mid{font-size:1.7em;}
+    .trick{width:120px;height:130px;}
+    .trick .pcard{margin:-31px 0 0 -22px;}
+    .eseat{max-width:96px;font-size:.76em;}
+  }
+
   /* waiting room */
   .wait-box{text-align:center;padding:30px 10px;}
   .wait-box .spin{font-size:2.4em;animation:bob 1.4s infinite;}
@@ -285,7 +388,7 @@
   </div>
 
   <div class="panel">
-    <h3>Leaderboard <span style="font-weight:400;color:#aaa;font-size:.72em">ELO · Quixx</span></h3>
+    <h3>Leaderboard <span id="boardTag" style="font-weight:400;color:#aaa;font-size:.72em">ELO</span></h3>
     <div id="statsPanel"><div class="empty">No finished games yet.</div></div>
   </div>
 
@@ -336,6 +439,29 @@
     <p style="color:#777;font-size:.85em">The bots search ahead — the higher their rating, the deeper they look.</p>
     <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
   </div>
+  <div class="modal rules" id="rulesEuchre" style="display:none">
+    <h2>How to play Euchre</h2>
+    <p><b>The table:</b> four players in two partnerships. <b>Your partner sits across from you</b> — the player at the top of the felt. You win points together.</p>
+    <p><b>The deck:</b> only 24 cards, 9 through ace. Everyone gets five, and the next card is turned face up.</p>
+    <p><b>The bowers — the one rule that trips people up:</b> the jack of the trump suit (the <i>right bower</i>) is the highest card in the game. The <b>other jack of the same colour</b> (the <i>left bower</i>) is the second highest — and it <b>counts as a trump, not as its printed suit</b>. If spades are trump, the jack of clubs <i>is a spade</i>. You cannot follow clubs with it.</p>
+    <p><b>Trump order, high to low:</b> right bower, left bower, then A K Q 10 9 of trump. Every trump beats every non-trump.</p>
+    <p><b>Bidding, round one:</b> starting left of the dealer, each player may <b>order up</b> the turned card — making its suit trump and giving that card to the dealer, who then discards one — or pass.</p>
+    <p><b>Round two:</b> if all four pass, the card is turned down and each player may <b>name any other suit</b> as trump, or pass again. Under <b>Stick the Dealer</b> the dealer cannot pass and must choose; under Standard, four more passes means a redeal.</p>
+    <p><b>Going alone:</b> whoever names trump may play without their partner, who sits the hand out. Riskier, but all five tricks is worth <b>4 points</b> instead of 2.</p>
+    <p><b>Playing:</b> five tricks. You must follow the led suit if you hold it; otherwise play anything. Highest trump wins, or the highest card of the suit led. The winner leads the next trick.</p>
+    <h3 style="margin:16px 0 6px">Scoring</h3>
+    <div class="rubric">
+      <div class="rub"><b>1</b><span>makers take 3–4</span></div>
+      <div class="rub"><b>2</b><span>makers take all 5</span></div>
+      <div class="rub"><b>4</b><span>alone, all 5</span></div>
+      <div class="rub"><b>2</b><span>euchred</span></div>
+    </div>
+    <p><b>Euchred:</b> if the side that named trump fails to take three tricks, the <i>other</i> side scores 2. That is the whole tension of the game — call too greedily and you hand over points.</p>
+    <p><b>Game over:</b> first partnership to <b>10 points</b>.</p>
+    <p style="color:#777;font-size:.85em">Cards you cannot legally play are greyed out, so you can always just tap what looks best. Hands are dealt server-side and never sent to anyone else — opponents and spectators only ever see the backs.</p>
+    <p style="color:#777;font-size:.85em">Both halves of a winning pair are credited with the win, and ratings move against the players on the other side.</p>
+    <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
+  </div>
   <div class="modal rules" id="rulesQuixx">
     <h2>How to play Quixx</h2>
     <p><b>On your turn</b>, roll all dice. Two things happen, in order:</p>
@@ -367,7 +493,9 @@ const VDESC={
          colors:'Numbers in order, cell colors scrambled.',
          numbers:'One color per row, numbers scrambled.',
          both:'Scrambled numbers AND colors. Chaos mode.'},
-  mancala:{standard:'Six pits a side, four stones each. Land in your store to go again.'}
+  mancala:{standard:'Six pits a side, four stones each. Land in your store to go again.'},
+  euchre:{standard:'All four pass twice and the hand is redealt.',
+          stick:'The dealer cannot pass — someone always names trump.'}
 };
 const COLORS=['red','yellow','green','blue'];
 const MAX_SEATS=4;
@@ -398,6 +526,7 @@ function showRules(){
   renderRubric();
   $('rulesQuixx').style.display=(gk==='quixx')?'':'none';
   $('rulesMancala').style.display=(gk==='mancala')?'':'none';
+  $('rulesEuchre').style.display=(gk==='euchre')?'':'none';
   $('rulesOverlay').classList.add('show');
 }
 function hideEnd(){$('endOverlay').classList.remove('show');}
@@ -487,6 +616,7 @@ function renderVariants(){
   if(g){
     $('hostHead').textContent='Host a game — '+g.title;
     $('rulesLink').textContent='How to play '+g.title;
+    $('boardTag').textContent='ELO · '+g.title;
     if(cfgHumans>g.max)cfgHumans=g.max;
     if(cfgHumans+cfgBots.length>g.max)cfgBots=cfgBots.slice(0,Math.max(0,g.max-cfgHumans));
   }
@@ -887,13 +1017,16 @@ function renderRoom(){
         +' <span class="badge lvl">'+eloTxt(aiById(b.profile))+'</span></li>').join('')
       +'</ul>';
     if(isHost())h+=tableHtml('room',room.humans,bots.map(b=>b.profile),room.players.length);
+    const need=(gameDef(room.game)||{}).min||2;      // Euchre needs all four
+    const enough=seatCount>=need;
     const missing=room.humans-room.players.length;
     if(missing>0)h+='<p class="sub">Waiting for '+missing+' more player'+(missing>1?'s':'')
-      +' to join from the lobby'+(seatCount>=2?' — or start now':'')+'…</p>';
+      +' to join from the lobby'+(enough?' — or start now':'')+'…</p>';
     if(isHost()){
-      if(seatCount>=2)
+      if(enough)
         h+='<button class="big-btn" style="max-width:300px;margin:0 auto" onclick="startGame()">Start Game</button>';
-      else h+='<p class="sub">Add a player or an AI to fill the table.</p>';
+      else h+='<p class="sub">'+room.gameTitle+' seats '+need+' — add '
+        +(need-seatCount)+' more player'+((need-seatCount)>1?'s':'')+' or AI.</p>';
     }else if(room.status==='ready'){
       h+='<p class="sub">Ready! Waiting for '+esc(room.host)+' to start…</p>';
     }
@@ -906,6 +1039,7 @@ function renderRoom(){
   // ----- game view -----
   const me=myIdx();
   if(g.kind==='mancala'){renderMancala(g,me,body);return;}
+  if(g.kind==='euchre'){renderEuchre(g,me,body);return;}
   const rollKey=g.dice?JSON.stringify(g.dice):null;
   const justRolled=rollKey&&rollKey!==lastRollKey;
   lastRollKey=rollKey;
@@ -1055,6 +1189,217 @@ function renderMancala(g,me,body){
     $('rematchBtn').style.display=isHost()?'':'none';
     $('endOverlay').classList.add('show');
   }
+}
+
+/* ---------- Euchre ---------- */
+const E_PIP={S:'♠',H:'♥',D:'♦',C:'♣'};
+const E_RNAME={'9':'9',T:'10',J:'J',Q:'Q',K:'K',A:'A'};
+const E_SNAME={S:'Spades',H:'Hearts',D:'Diamonds',C:'Clubs'};
+const isRed=s=>s==='H'||s==='D';
+let beatTimer=null,lastBeat=null;
+
+/* One playing card. `cls` carries state (playable / dim / win / sm). */
+function cardHtml(code,cls,onclick){
+  const r=E_RNAME[code[0]],s=code[1];
+  const tag=onclick?'button':'div';
+  return '<'+tag+' class="pcard'+(isRed(s)?' red':'')+(cls?' '+cls:'')+'"'
+    +(onclick?' onclick="'+onclick+'"':'')+' title="'+r+' of '+E_SNAME[s]+'">'
+    +'<span class="ix">'+r+'<i>'+E_PIP[s]+'</i></span>'
+    +'<span class="mid">'+E_PIP[s]+'</span></'+tag+'>';
+}
+function backHtml(cls){return '<div class="pcard back'+(cls?' '+cls:'')+'"></div>';}
+
+function euchreAct(type,extra){act(type,extra);}
+function playCard(c){act('play',{card:c});}
+function discardCard(c){act('discard',{card:c});}
+function bidOrder(){act('order',{alone:$('goAlone')&&$('goAlone').checked});}
+function bidCall(s){act('call',{suit:s,alone:$('goAlone')&&$('goAlone').checked});}
+function bidPass(){act('pass');}
+
+/* The table pauses after a trick and after a hand so everyone can see what
+   happened. Any client may nudge it on; the beat id stops a late nudge from
+   skipping the next pause. */
+function scheduleBeat(g){
+  if(!g.pending){lastBeat=null;clearTimeout(beatTimer);return;}
+  if(lastBeat===g.beat)return;                 // already waiting on this one
+  lastBeat=g.beat;
+  clearTimeout(beatTimer);
+  const at=g.beat;
+  beatTimer=setTimeout(()=>{
+    if(room&&room.state&&room.state.beat===at)api('rooms/'+room.id+'/action',{type:'continue',at:at});
+  },g.pending==='hand'?2800:1400);
+}
+
+function seatHtml(g,si,me,pos){
+  const p=g.players[si];
+  if(!p)return '';
+  const mine=si===me;
+  const turn=g.turn===si&&!g.over&&!g.pending;
+  let h='<div class="eseat st-'+pos+(turn?' turn':'')+(p.out?' out':'')+'">';
+  h+='<span class="en">'+(p.kind==='ai'?'🤖 ':'')+esc(p.name)+'</span>';
+  h+='<span class="em">';
+  if(si===g.dealer)h+='<span class="etag dealer">D</span>';
+  if(si===g.maker)h+='<span class="etag maker">'+(g.alone===si?'ALONE':'MAKER')+'</span>';
+  if(mine)h+='<span class="etag you">YOU</span>';
+  h+='</span>';
+  if(!mine){
+    let backs='';
+    for(let i=0;i<p.cards;i++)backs+=backHtml('sm');
+    h+='<div class="ebacks">'+(p.out?'<span class="em">sitting out</span>':backs)+'</div>';
+  }
+  if(p.out)h+='<span class="em">sitting out</span>';
+  else if(turn)h+='<span class="em">thinking…</span>';
+  h+='</div>';
+  return h;
+}
+
+function renderEuchre(g,me,body){
+  const seat=me>=0?me:0;                    // spectators watch from seat 0's side
+  const rel=i=>(seat+i)%4;                  // 0 south, 1 west, 2 north, 3 east
+  const myTurn=me>=0&&g.turn===me&&!g.over&&!g.pending;
+  const legal=new Set(g.legal||[]);
+  const usTeam=(me>=0?me:0)%2;
+
+  scheduleBeat(g);
+
+  // ---- score strip ----
+  let h='<div class="escore">'
+    +'<div class="us"><b>'+g.scores[usTeam]+'</b><span>'+(me>=0?'US':'Team 1')+'</span>'
+      +'<div class="tk">'+g.tricks[usTeam]+' trick'+(g.tricks[usTeam]===1?'':'s')+'</div></div>'
+    +'<div class="them"><b>'+g.scores[1-usTeam]+'</b><span>'+(me>=0?'THEM':'Team 2')+'</span>'
+      +'<div class="tk">'+g.tricks[1-usTeam]+' trick'+(g.tricks[1-usTeam]===1?'':'s')+'</div></div>'
+    +'<div><b>'+g.target+'</b><span>TO WIN</span><div class="tk">hand '+g.handNo+'</div></div>'
+    +'</div>';
+
+  // ---- trump / phase band ----
+  h+='<div class="eband">';
+  if(g.trump)h+='<span class="trumpchip'+(isRed(g.trump)?' red':'')+'">'
+    +E_PIP[g.trump]+' '+E_SNAME[g.trump]+' is trump</span>';
+  else if(g.phase==='bid1')h+='<span class="trumpchip none">Bidding — '
+    +E_PIP[g.upcard[1]]+' turned up</span>';
+  else h+='<span class="trumpchip none">Bidding — '
+    +(g.turned?E_SNAME[g.turned]+' turned down':'naming a suit')+'</span>';
+  h+='</div>';
+
+  // ---- the felt ----
+  h+='<div class="felt">';
+  h+=seatHtml(g,rel(2),me,'n');
+  h+=seatHtml(g,rel(1),me,'w');
+  h+=seatHtml(g,rel(3),me,'e');
+  h+='<div class="st-c">';
+  const shown=(g.trick&&g.trick.length)?g.trick
+             :(g.pending==='trick'&&g.lastTrick?g.lastTrick.cards:[]);
+  if(shown.length||g.pending==='trick'){
+    h+='<div class="trick">';
+    for(const e of shown){
+      const where=(e.seat-seat+4)%4;
+      const won=g.pending==='trick'&&g.lastTrick&&g.lastTrick.winner===e.seat;
+      h+=cardHtml(e.card,'tk-'+where+(won?' win':''));
+    }
+    h+='</div>';
+  }else if(g.phase==='bid1'){
+    h+='<div style="text-align:center"><div class="ewait">Turned up</div>'
+      +cardHtml(g.upcard,'')+'</div>';
+  }else if(g.pending==='hand'&&g.handSummary){
+    h+='<div class="handbanner">'+esc(g.handSummary.text)+'</div>';
+  }
+  h+='</div>';
+  h+=seatHtml(g,rel(0),me,'s');
+  h+='</div>';
+
+  // ---- what I have to do ----
+  if(g.over){
+    h+='<div class="bidbar"><div class="q">Game over</div>'+esc(g.reason||'')+'</div>';
+  }else if(g.pending==='hand'&&g.handSummary){
+    h+='<div class="bidbar"><div class="q">'+esc(g.handSummary.text)+'</div>'
+      +'<span class="ewait">Next hand coming up…</span></div>';
+  }else if(g.pending==='trick'&&g.lastTrick){
+    // said here rather than over the cards, which would cover the pile
+    const w=g.lastTrick.winner,ours=me>=0&&w%2===usTeam;
+    h+='<div class="bidbar"><div class="q">'
+      +(g.players[w].kind==='ai'?'🤖 ':'')+esc(g.players[w].name)+' takes trick '
+      +g.lastTrick.no+(ours?' — that one is ours':'')+'</div></div>';
+  }else if(myTurn&&g.phase==='bid1'){
+    const up=g.upcard,dealerIsMe=g.dealer===me;
+    h+='<div class="bidbar"><div class="q">'
+      +(dealerIsMe?'Pick up the '+E_RNAME[up[0]]+E_PIP[up[1]]+'?'
+                  :'Order up '+E_SNAME[up[1]]+'?')+'</div>'
+      +'<div class="row">'
+      +'<button class="bidbtn" onclick="bidOrder()">'+(dealerIsMe?'Pick it up':'Order it up')+'</button>'
+      +'<button class="bidbtn pass" onclick="bidPass()">Pass</button></div>'
+      +aloneBox()+'</div>';
+  }else if(myTurn&&g.phase==='bid2'){
+    const must=room.variant==='stick'&&g.dealer===me;
+    h+='<div class="bidbar"><div class="q">Name a suit'
+      +(must?' — stuck with it, you must call':'')+'</div><div class="row">';
+    for(const s of ['S','H','D','C']){
+      if(s===g.turned)continue;
+      h+='<button class="bidbtn suit'+(isRed(s)?' red':'')+'" onclick="bidCall(\''+s+'\')">'
+        +E_PIP[s]+' '+E_SNAME[s]+'</button>';
+    }
+    h+='</div>';
+    if(!must)h+='<div class="row" style="margin-top:8px">'
+      +'<button class="bidbtn pass" onclick="bidPass()">Pass</button></div>';
+    h+=aloneBox()+'</div>';
+  }else if(myTurn&&g.phase==='discard'){
+    h+='<div class="bidbar"><div class="q">You took the '+E_RNAME[g.upcard[0]]+E_PIP[g.upcard[1]]
+      +' — tap a card to discard</div></div>';
+  }else if(myTurn&&g.phase==='play'){
+    const lead=!g.trick.length;
+    h+='<div class="bidbar"><div class="q">'+(lead?'Your lead':'Your turn')+'</div>'
+      +'<span class="ewait">'+(lead?'Play any card.'
+        :'Follow '+E_SNAME[euSuitOf(g.trick[0].card,g.trump)]+' if you can.')+'</span></div>';
+  }else if(me>=0&&!g.pending&&g.turn!=null){
+    h+='<div class="ewait" style="opacity:.7">Waiting for '
+      +esc(g.players[g.turn].name)+'…</div>';
+  }
+
+  // ---- my hand ----
+  if(me>=0){
+    const canDiscard=myTurn&&g.phase==='discard';
+    const canPlay=myTurn&&g.phase==='play';
+    h+='<div class="ehand">';
+    for(const c of g.hand){
+      const ok=canDiscard||(canPlay&&legal.has(c));
+      const dim=canPlay&&!legal.has(c);
+      h+=cardHtml(c,(ok?'playable':'')+(dim?' dim':''),
+        ok?(canDiscard?'discardCard(\''+c+'\')':'playCard(\''+c+'\')'):'');
+    }
+    h+='</div>';
+  }else{
+    h+='<div class="ewait">👀 Spectating — hands stay hidden.</div>';
+  }
+
+  if(g.log&&g.log.length)
+    h+='<div class="movelog">'+g.log.slice(-3).map(esc).join(' &nbsp;·&nbsp; ')+'</div>';
+  body.innerHTML=h;
+
+  // ---- end overlay, once ----
+  if(g.over&&endShownFor!==room.id+g.reason){
+    endShownFor=room.id+g.reason;
+    const win=g.scores[0]>g.scores[1]?0:1;
+    const won=me>=0?(win===usTeam):null;
+    const nm=t=>g.players.filter((p,i)=>i%2===t)
+      .map(p=>(p.kind==='ai'?'🤖 ':'')+esc(p.name)).join(' & ');
+    $('endTitle').innerHTML=(g.reason&&g.reason.indexOf(' left ')>=0)?'🏁 Game ended early'
+      :(won===null?'🏆 '+nm(win)+' win!':(won?'🏆 You win!':'😞 You lose'));
+    $('endReason').textContent=g.reason||'';
+    $('endScores').innerHTML=
+      '<div><span><b>'+nm(win)+'</b></span><b>'+g.scores[win]+'</b></div>'
+      +'<div><span>'+nm(1-win)+'</span><b>'+g.scores[1-win]+'</b></div>';
+    $('rematchBtn').style.display=isHost()?'':'none';
+    $('endOverlay').classList.add('show');
+  }
+}
+function aloneBox(){
+  return '<label class="alonebox"><input type="checkbox" id="goAlone"> '
+    +'Go alone <span style="color:#999">(partner sits out — 4 points for all five)</span></label>';
+}
+/* mirror of the server rule: the left bower belongs to trump */
+function euSuitOf(card,trump){
+  const mate={S:'C',C:'S',H:'D',D:'H'};
+  if(trump&&card[0]==='J'&&mate[card[1]]===trump)return trump;
+  return card[1];
 }
 
 function boardHtml(g,pi,me){

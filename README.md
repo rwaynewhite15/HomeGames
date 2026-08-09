@@ -15,9 +15,15 @@ Games so far:
   Numbers, Both Mixed).
 - **Mancala** — 2 players, standard Kalah. Ported from the `mancala` project;
   the rules were checked move-for-move against the original over 400 games.
+- **Euchre** — 4 players in fixed partnerships, two variants (Standard, Stick
+  the Dealer). Both bowers, ordering up, going alone, and the full 1/2/4-point
+  scoring to ten. The first game here with hidden information: hands are dealt
+  server-side and each client is sent only its own cards, so opponents and
+  spectators genuinely cannot see them.
 
 Each game keeps its own leaderboard and ELO, so a bot can be strong at one and
-weak at another.
+weak at another. Euchre is scored as a partnership — both halves of a winning
+pair are credited with the win, and ratings move against the other side.
 
 ## Requirements
 
@@ -159,14 +165,22 @@ An engine needs:
 |---|---|
 | `__init__(variant, seats)` | seats are `{id, name, kind, profile, …}` |
 | `apply(cid, body)` | handle one action, return an error string or `None` |
-| `to_dict()` | state to broadcast; `kind` selects the client renderer |
+| `to_dict(viewer=None)` | state to broadcast; `kind` selects the client renderer. `viewer` is the recipient's `cid`, so a game with hidden information can build a different payload per seat — `None` means a spectator |
 | `bot_step()` | play one pending AI move, `False` when waiting on a human |
 | `result_summary()` | final scores, so the game lands on the leaderboard |
 | `forfeit(cid)`, `over`, `total(i)` | shared lifecycle |
 
 AI seats carry a `blunder` rate. Quixx turns it into random moves alongside
-learned weights; Mancala turns it into search depth, so a bot plays at roughly
-its usual relative strength in either game. An engine needs a constructor
+learned weights; Mancala turns it into search depth; Euchre jitters the
+hand-strength estimate a bot bids on and occasionally picks a random legal
+card — so a bot plays at roughly its usual relative strength in any of them.
+
+`broadcast_room` builds the payload once per recipient rather than once per
+room, which is what lets Euchre keep hands secret. A partnership game also sets
+`teams: True` in its `GAMES` entry and puts a `team` index on each player in
+`result_summary()`; the trainer then seats one brain per side for its 2v2
+head-to-head, and the stats layer counts a pair as a single side when working
+out who won. An engine needs a constructor
 `(variant, seats)` — where each seat is `{id, name, kind, level}` — plus action
 methods and `to_dict()` for broadcasting state. The client renders by
 `state.kind`. To support AI seats, add a `bot_step()` that plays one pending AI

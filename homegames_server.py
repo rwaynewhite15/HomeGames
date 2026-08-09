@@ -7,7 +7,8 @@ Run:  python homegames_server.py
 Then open http://localhost:4001 (or http://<your-LAN-IP>:4001 from other devices).
 
 Platform: lobby with rooms you can host, join, or spectate.
-Games: Quixx (standard / mixed colors / mixed numbers / both). More games plug in later.
+Games: Quixx (standard / mixed colors / mixed numbers / both), Mancala (Kalah),
+       Euchre (standard / stick the dealer). More games plug in later.
 """
 import json
 import os
@@ -399,7 +400,8 @@ class Quixx:
                         for i, p in enumerate(self.players)],
         }
 
-    def to_dict(self):
+    def to_dict(self, viewer=None):
+        # everything on a Quixx table is public, so the viewer makes no odds
         return {
             'kind': 'quixx',
             'variant': self.variant,
@@ -685,7 +687,8 @@ class Mancala:
                         for i, p in enumerate(self.players)],
         }
 
-    def to_dict(self):
+    def to_dict(self, viewer=None):
+        # both sides of a Mancala board are open, so the viewer makes no odds
         return {
             'kind': 'mancala', 'variant': self.variant, 'board': self.board,
             'players': [{'cid': p['cid'], 'name': p['name'], 'kind': p['kind'],
@@ -696,6 +699,593 @@ class Mancala:
             'last': self.last, 'log': self.log[-5:],
             'valid': [self.valid_moves(0) if self.active == 0 and not self.over else [],
                       self.valid_moves(1) if self.active == 1 and not self.over else []],
+        }
+
+
+# ============================================================
+#  Euchre engine (4 seats, fixed partnerships)
+# ============================================================
+# A 24-card deck — 9 up to ace — dealt five each. Seats 0 and 2 are one team
+# and seats 1 and 3 the other, so partners always sit across the table. One
+# side names trump and then has to take three of the five tricks; first team
+# to ten points wins the match.
+E_SUITS = ['S', 'H', 'D', 'C']
+E_RANKS = ['9', 'T', 'J', 'Q', 'K', 'A']
+E_ORDER = {r: i for i, r in enumerate(E_RANKS)}
+E_SUIT_NAMES = {'S': 'Spades', 'H': 'Hearts', 'D': 'Diamonds', 'C': 'Clubs'}
+E_PIPS = {'S': '♠', 'H': '♥', 'D': '♦', 'C': '♣'}
+E_RANK_NAMES = {'9': '9', 'T': '10', 'J': 'J', 'Q': 'Q', 'K': 'K', 'A': 'A'}
+E_MATE = {'S': 'C', 'C': 'S', 'H': 'D', 'D': 'H'}      # the same-colour suit
+E_TARGET = 10
+
+
+def e_deck():
+    return [r + s for s in E_SUITS for r in E_RANKS]
+
+
+def e_card_name(c):
+    return E_RANK_NAMES[c[0]] + E_PIPS[c[1]]
+
+
+def e_suit(card, trump):
+    """The suit a card really belongs to. The left bower — the jack matching
+    trump in colour — becomes a trump and stops being a member of its printed
+    suit, which is the one rule that catches out every new Euchre player."""
+    s = card[1]
+    if trump and card[0] == 'J' and E_MATE[s] == trump:
+        return trump
+    return s
+
+
+def e_power(card, trump, led):
+    """Trick-taking power. Trump beats everything, the right bower beats the
+    left, and anything off the led suit cannot win at all."""
+    s = e_suit(card, trump)
+    if trump and s == trump:
+        if card[0] == 'J':
+            return 220 if card[1] == trump else 210
+        return 200 + E_ORDER[card[0]]
+    if s == led:
+        return 100 + E_ORDER[card[0]]
+    return 0
+
+
+def e_sort_key(card, trump):
+    """Display order: trump first, then the other suits, high to low."""
+    s = e_suit(card, trump)
+    grp = 0 if (trump and s == trump) else 1 + E_SUITS.index(s)
+    return (grp, -e_power(card, trump, s))
+
+
+def e_follow(hand, trump, led):
+    """The cards you are allowed to play. You must follow the led suit while
+    you hold it — counting the left bower as trump, not as its printed suit."""
+    same = [c for c in hand if e_suit(c, trump) == led]
+    return same or list(hand)
+
+
+# What a Euchre bot can learn. Zero is the plain textbook heuristic, so a brain
+# that has never trained plays exactly what the reference bot plays.
+#   order   — how readily it names trump at all
+#   alone   — how readily it drops its partner and plays the hand solo
+#   offace  — what it thinks an off-suit ace is worth when bidding
+#   void    — what it thinks a short suit is worth
+#   lead    — how much it likes leading trump to draw the opposition's
+#   partner — how far it trusts a partner who is already winning the trick
+E_KEYS = ['order', 'alone', 'offace', 'void', 'lead', 'partner']
+E_DEFAULT = {k: 0.0 for k in E_KEYS}
+E_BOUNDS = {'order': (-1.5, 1.5), 'alone': (-1.5, 1.5), 'offace': (-1.0, 1.0),
+            'void': (-1.0, 1.0), 'lead': (-1.5, 1.5), 'partner': (-1.5, 1.5)}
+E_MUTATION = {'order': 0.18, 'alone': 0.18, 'offace': 0.12,
+              'void': 0.12, 'lead': 0.2, 'partner': 0.2}
+E_JITTER = {'order': 0.25, 'alone': 0.25, 'offace': 0.18,
+            'void': 0.18, 'lead': 0.3, 'partner': 0.3}
+
+E_TRUMP_PTS = {'A': 2.0, 'K': 1.5, 'Q': 1.0, 'T': 0.6, '9': 0.5}
+# Hand-strength cutoffs, read off the actual distribution over 60k deals rather
+# than guessed. Four seats each get a say, so an individual rate compounds:
+# ordering on the top 23% of hands is what puts a caller in about 62% of deals,
+# roughly how often a real table takes it up. Round two scores the best of the
+# three suits left, so the same appetite needs a higher number to mean the same
+# thing. Going alone sits up at the 99th percentile, where it belongs.
+# These land a caller in ~93% of deals (7% pass out), someone goes alone in
+# ~4.5%, and the makers get euchred ~12% of the time.
+E_CALL = 5.2        # order up the turned suit
+E_CALL2 = 5.9       # name a suit after the upcard is turned down — lower than
+                    # E_CALL because it is the last chance before a redeal
+E_ALONE = 8.7       # ...and drop your partner
+
+
+def e_strength(hand, trump, w):
+    """Roughly how many of the five tricks a hand should take with `trump`
+    named. The bowers do most of the work, an off-suit ace is worth about a
+    trick, and a void counts for something because it lets you trump in."""
+    pts, held = 0.0, set()
+    for c in hand:
+        s = e_suit(c, trump)
+        held.add(s)
+        if s == trump:
+            if c[0] == 'J':
+                pts += 3.0 if c[1] == trump else 2.5
+            else:
+                pts += E_TRUMP_PTS[c[0]]
+        elif c[0] == 'A':
+            pts += 1.0 + 0.3 * w['offace']
+        elif c[0] == 'K':
+            pts += 0.35
+    voids = 3 - len([s for s in held if s != trump])
+    return pts + 0.45 * voids * (1.0 + 0.4 * w['void'])
+
+
+class Euchre:
+    """Four-handed Euchre. Partners sit across, the bowers outrank the aces,
+    and the side that names trump must take three tricks or be euchred."""
+
+    def __init__(self, variant, seats):
+        self.variant = variant if variant in ('standard', 'stick') else 'standard'
+        self.players = [{'cid': s['id'], 'name': s['name'],
+                         'kind': s.get('kind', 'human'),
+                         'profile': s.get('profile'),
+                         # the reference bot plays the plain textbook heuristic
+                         'reference': bool(s.get('reference')),
+                         'weights': (dict(E_DEFAULT) if s.get('reference')
+                                     else dict(s.get('weights') or E_DEFAULT)),
+                         'blunder': (0.0 if s.get('reference')
+                                     else float(s.get('blunder') or 0.0))}
+                        for s in seats]
+        for p in self.players:                  # a brain from before Euchre existed
+            for k in E_KEYS:
+                p['weights'].setdefault(k, 0.0)
+        self.all_ai = all(p['kind'] == 'ai' for p in self.players)
+        self.scores = [0, 0]
+        self.dealer = random.randrange(4)
+        self.hand_no = 0
+        self.over = False
+        self.end_reason = None
+        self.forfeit_idx = None
+        self.log = []
+        self.pending = None            # 'trick' | 'hand' — a beat for the table
+        self.hand_summary = None
+        self.last_trick = None
+        self.start_hand()
+
+    # ---- table helpers ----
+    def team(self, seat):
+        return seat % 2
+
+    def sitting_out(self):
+        """The partner of whoever went alone, who sits the hand out."""
+        return None if self.alone is None else (self.alone + 2) % 4
+
+    def in_play(self, seat):
+        return seat != self.sitting_out()
+
+    def next_seat(self, seat):
+        s = (seat + 1) % 4
+        return s if self.in_play(s) else (s + 1) % 4
+
+    def pidx(self, cid):
+        for i, p in enumerate(self.players):
+            if p['cid'] == cid:
+                return i
+        return None
+
+    def name(self, seat):
+        return self.players[seat]['name']
+
+    def note(self, text):
+        self.log.append(text)
+        del self.log[:-8]
+
+    def total(self, i):
+        """A seat's score is its side's score — Euchre is won as a pair."""
+        return self.scores[self.team(i)]
+
+    # ---- dealing & bidding ----
+    def start_hand(self):
+        d = e_deck()
+        random.shuffle(d)
+        self.hands = [d[i * 5:i * 5 + 5] for i in range(4)]
+        self.upcard = d[20]
+        self.hand_no += 1
+        self.trump = None
+        self.maker = None
+        self.alone = None
+        self.turned = None
+        self.phase = 'bid1'
+        self.turn = (self.dealer + 1) % 4
+        self.trick = []
+        self.trick_no = 0
+        self.tricks = [0, 0]
+        self.leader = (self.dealer + 1) % 4
+        self.last_trick = None
+        self.hand_summary = None
+        self.note('%s deals — %s turned up.'
+                  % (self.name(self.dealer), e_card_name(self.upcard)))
+
+    def order_up(self, seat, alone):
+        if self.phase != 'bid1':
+            return 'Nobody has turned a card up.'
+        self.trump = self.upcard[1]
+        self.maker = seat
+        self.alone = seat if alone else None
+        self.hands[self.dealer].append(self.upcard)
+        self.note('%s %s — %s is trump%s.'
+                  % (self.name(seat),
+                     'picks it up' if seat == self.dealer else 'orders it up',
+                     E_SUIT_NAMES[self.trump], ', alone' if alone else ''))
+        self.phase = 'discard'
+        self.turn = self.dealer
+        return None
+
+    def discard(self, seat, card):
+        if self.phase != 'discard' or seat != self.dealer:
+            return 'There is nothing to discard.'
+        if card not in self.hands[seat]:
+            return 'You do not hold that card.'
+        self.hands[seat].remove(card)
+        self.note('%s discards.' % self.name(seat))
+        self.begin_play()
+        return None
+
+    def pass_bid(self, seat):
+        if self.phase not in ('bid1', 'bid2'):
+            return 'There is no bid to pass on.'
+        if self.phase == 'bid2' and seat == self.dealer and self.variant == 'stick':
+            return 'Stick the dealer — you have to name a suit.'
+        self.note('%s passes.' % self.name(seat))
+        if seat != self.dealer:
+            self.turn = (seat + 1) % 4
+        elif self.phase == 'bid1':
+            self.phase = 'bid2'
+            self.turned = self.upcard[1]
+            self.turn = (self.dealer + 1) % 4
+            self.note('%s is turned down.' % E_SUIT_NAMES[self.turned])
+        else:
+            self.pass_out()
+        return None
+
+    def pass_out(self):
+        """Everybody passed twice — no trump, nobody scores, deal again."""
+        self.hand_summary = {'passed': True,
+                             'text': 'Passed out — nobody named trump.'}
+        self.note('Passed out — redeal.')
+        self.pending = 'hand'
+
+    def call_trump(self, seat, suit, alone):
+        if self.phase != 'bid2':
+            return 'You cannot name a suit yet.'
+        if suit not in E_SUITS:
+            return 'Pick a suit.'
+        if suit == self.turned:
+            return '%s was turned down — pick another suit.' % E_SUIT_NAMES[suit]
+        self.trump = suit
+        self.maker = seat
+        self.alone = seat if alone else None
+        self.note('%s names %s%s.' % (self.name(seat), E_SUIT_NAMES[suit],
+                                      ', alone' if alone else ''))
+        self.begin_play()
+        return None
+
+    # ---- trick play ----
+    def begin_play(self):
+        self.phase = 'play'
+        self.leader = (self.dealer + 1) % 4
+        if not self.in_play(self.leader):
+            self.leader = (self.leader + 1) % 4
+        self.turn = self.leader
+        self.trick = []
+        self.trick_no = 0
+
+    def play(self, seat, card):
+        if self.phase != 'play':
+            return 'No trick is in progress.'
+        hand = self.hands[seat]
+        if card not in hand:
+            return 'You do not hold that card.'
+        if self.trick:
+            led = e_suit(self.trick[0]['card'], self.trump)
+            if card not in e_follow(hand, self.trump, led):
+                return 'You have to follow %s.' % E_SUIT_NAMES[led]
+        hand.remove(card)
+        self.trick.append({'seat': seat, 'card': card})
+        if len(self.trick) >= (3 if self.alone is not None else 4):
+            self.resolve_trick()
+        else:
+            self.turn = self.next_seat(seat)
+        return None
+
+    def resolve_trick(self):
+        led = e_suit(self.trick[0]['card'], self.trump)
+        best = max(self.trick, key=lambda x: e_power(x['card'], self.trump, led))
+        w = best['seat']
+        self.tricks[self.team(w)] += 1
+        self.trick_no += 1
+        self.leader = w
+        self.last_trick = {'cards': list(self.trick), 'winner': w,
+                           'no': self.trick_no}
+        self.note('%s takes trick %d with %s.'
+                  % (self.name(w), self.trick_no, e_card_name(best['card'])))
+        self.pending = 'trick'          # hold, so everyone sees who took it
+
+    def score_hand(self):
+        mt = self.team(self.maker)
+        won = self.tricks[mt]
+        alone = self.alone is not None
+        who = self.name(self.maker)
+        if won >= 3:
+            pts = 4 if (alone and won == 5) else (2 if won == 5 else 1)
+            self.scores[mt] += pts
+            if alone and won == 5:
+                text = '%s went alone and swept all five — 4 points.' % who
+            elif won == 5:
+                text = '%s marched — all five tricks, 2 points.' % who
+            else:
+                text = '%s made it with %d tricks — 1 point.' % (who, won)
+            euchred = False
+        else:
+            pts, euchred = 2, True
+            self.scores[1 - mt] += pts
+            text = '%s was euchred — 2 points the other way.' % who
+        self.hand_summary = {'passed': False, 'text': text, 'maker': self.maker,
+                             'makerTeam': mt, 'tricks': list(self.tricks),
+                             'points': pts, 'euchred': euchred, 'alone': alone}
+        self.note(text)
+        self.pending = 'hand'
+
+    def resume(self):
+        """Clear the pause that lets the table see a finished trick or hand."""
+        if not self.pending:
+            return None
+        if self.pending == 'trick':
+            self.pending = None
+            self.trick = []
+            if self.trick_no >= 5:
+                self.score_hand()
+            else:
+                self.turn = self.leader
+            return None
+        self.pending = None                       # 'hand'
+        self.last_trick = None
+        if max(self.scores) >= E_TARGET:
+            self.finish()
+        else:
+            self.dealer = (self.dealer + 1) % 4
+            self.start_hand()
+        return None
+
+    def finish(self):
+        self.over = True
+        self.phase = 'over'
+        self.turn = None
+        a, b = self.scores
+        win = 0 if a > b else 1
+        self.end_reason = ('%s & %s win %d–%d.'
+                           % (self.name(win), self.name(win + 2),
+                              max(a, b), min(a, b)))
+
+    def forfeit(self, quitter_cid):
+        p = self.pidx(quitter_cid)
+        self.over = True
+        self.phase = 'over'
+        self.turn = None
+        self.pending = None
+        self.forfeit_idx = p
+        if p is None:
+            self.end_reason = 'A player left — the game ended early.'
+        else:
+            other = 1 - self.team(p)
+            self.end_reason = ('%s left — %s & %s take it by forfeit.'
+                               % (self.name(p), self.name(other),
+                                  self.name(other + 2)))
+
+    # ---- actions ----
+    def beat_id(self):
+        """Identifies the exact pause the table is sitting on, so a nudge meant
+        for the last trick cannot skip past the hand summary behind it."""
+        return '%s:%d:%d' % (self.pending or '-', self.hand_no, self.trick_no)
+
+    def apply(self, cid, body):
+        t = str(body.get('type') or '')
+        if t == 'continue':               # anyone at the table can clear a beat
+            want = str(body.get('at') or '')
+            if want and want != self.beat_id():
+                return None               # a stale nudge from another client
+            return self.resume()
+        if self.over:
+            return 'The game is over.'
+        if self.pending:
+            return 'Wait for the table to settle.'
+        seat = self.pidx(cid)
+        if seat is None:
+            return 'You are not seated at this table.'
+        if seat != self.turn:
+            return "It's not your turn."
+        if t == 'order':
+            return self.order_up(seat, bool(body.get('alone')))
+        if t == 'pass':
+            return self.pass_bid(seat)
+        if t == 'call':
+            return self.call_trump(seat, str(body.get('suit') or ''),
+                                   bool(body.get('alone')))
+        if t == 'discard':
+            return self.discard(seat, str(body.get('card') or ''))
+        if t == 'play':
+            return self.play(seat, str(body.get('card') or ''))
+        return 'Unknown action.'
+
+    # ---- AI ----
+    def worst_card(self, hand, trump, w):
+        """The least useful card to let go of: cheap, not trump, and ideally
+        the last of its suit so the hand can trump that suit later."""
+        counts = {}
+        for c in hand:
+            s = e_suit(c, trump)
+            counts[s] = counts.get(s, 0) + 1
+
+        def cost(c):
+            s = e_suit(c, trump)
+            v = e_power(c, trump, s)
+            if trump and s == trump:
+                v += 500                       # never pitch trump if there is a choice
+            if c[0] == 'A':
+                v += 40
+            if counts[s] == 1 and s != trump:
+                v -= 25 * (1.0 + 0.5 * w['void'])
+            return v
+        return min(hand, key=cost)
+
+    def bot_bid1(self, seat):
+        p = self.players[seat]
+        w = p['weights']
+        suit = self.upcard[1]
+        hand = list(self.hands[seat])
+        if seat == self.dealer:
+            # the dealer would take the upcard, so judge the hand it would keep
+            hand.append(self.upcard)
+            hand.remove(self.worst_card(hand, suit, w))
+        s = e_strength(hand, suit, w)
+        # Where the upcard ends up. The dealer needs no bonus here — it is
+        # already holding the card in the hand valued above; double-counting it
+        # was what had the dealer ordering up almost every deal.
+        if seat != self.dealer:
+            s += 0.25 if self.team(seat) == self.team(self.dealer) else -0.3
+        if p['blunder'] and random.random() < p['blunder']:
+            s += random.uniform(-1.2, 1.2)
+        if s >= E_CALL - 0.35 * w['order']:
+            self.order_up(seat, s >= E_ALONE - 0.4 * w['alone'])
+        else:
+            self.pass_bid(seat)
+
+    def bot_bid2(self, seat):
+        p = self.players[seat]
+        w = p['weights']
+        best, pick = None, None
+        for suit in E_SUITS:
+            if suit == self.turned:
+                continue
+            s = e_strength(self.hands[seat], suit, w)
+            if best is None or s > best:
+                best, pick = s, suit
+        if p['blunder'] and random.random() < p['blunder']:
+            best += random.uniform(-1.2, 1.2)
+        must = seat == self.dealer and self.variant == 'stick'
+        if must or best >= E_CALL2 - 0.35 * w['order']:
+            self.call_trump(seat, pick, best >= E_ALONE - 0.4 * w['alone'])
+        else:
+            self.pass_bid(seat)
+
+    def pick_lead(self, seat, w):
+        """Leading. The makers draw trump so their bowers clear the way;
+        everyone else prefers an off-suit ace and otherwise leads cheap."""
+        hand = self.hands[seat]
+        trumps = [c for c in hand if e_suit(c, self.trump) == self.trump]
+        aces = [c for c in hand
+                if c[0] == 'A' and e_suit(c, self.trump) != self.trump]
+        ours = self.maker is not None and self.team(self.maker) == self.team(seat)
+        want_trump = (ours and len(trumps) >= 2) or w['lead'] > 0.6
+        if self.alone == seat and trumps:
+            want_trump = True
+        if want_trump and trumps:
+            return max(trumps, key=lambda c: e_power(c, self.trump, self.trump))
+        if aces:
+            return aces[0]
+        plain = [c for c in hand if e_suit(c, self.trump) != self.trump]
+        if not plain:
+            return min(trumps, key=lambda c: e_power(c, self.trump, self.trump))
+        return self.worst_card(plain, self.trump, w)
+
+    def pick_card(self, seat):
+        p = self.players[seat]
+        w = p['weights']
+        hand = self.hands[seat]
+        if not self.trick:
+            if p['blunder'] and random.random() < p['blunder']:
+                return random.choice(hand)
+            return self.pick_lead(seat, w)
+        led = e_suit(self.trick[0]['card'], self.trump)
+        legal = e_follow(hand, self.trump, led)
+        if len(legal) == 1:
+            return legal[0]
+        if p['blunder'] and random.random() < p['blunder']:
+            return random.choice(legal)
+        best = max(self.trick, key=lambda x: e_power(x['card'], self.trump, led))
+        top = e_power(best['card'], self.trump, led)
+        partner_ahead = self.team(best['seat']) == self.team(seat)
+        last = len(self.trick) == (2 if self.alone is not None else 3)
+        # partner already has it — save the good cards for a trick that needs them
+        if partner_ahead and (last or top >= 205 or w['partner'] > 0.4):
+            return self.worst_card(legal, self.trump, w)
+        winners = [c for c in legal if e_power(c, self.trump, led) > top]
+        if winners:
+            return min(winners, key=lambda c: e_power(c, self.trump, led))
+        return self.worst_card(legal, self.trump, w)
+
+    def bot_step(self):
+        if self.over:
+            return False
+        if self.pending:
+            # with nobody watching there is no reason to hold the beat
+            if self.all_ai:
+                self.resume()
+                return True
+            return False
+        seat = self.turn
+        if seat is None or self.players[seat]['kind'] != 'ai':
+            return False
+        if self.phase == 'bid1':
+            self.bot_bid1(seat)
+        elif self.phase == 'bid2':
+            self.bot_bid2(seat)
+        elif self.phase == 'discard':
+            self.discard(seat, self.worst_card(self.hands[seat], self.trump,
+                                               self.players[seat]['weights']))
+        elif self.phase == 'play':
+            self.play(seat, self.pick_card(seat))
+        else:
+            return False
+        return True
+
+    # ---- payloads ----
+    def result_summary(self):
+        return {
+            'game': 'euchre', 'variant': self.variant, 'reason': self.end_reason,
+            'players': [{'name': p['name'], 'score': self.total(i), 'penalties': 0,
+                         'kind': p['kind'], 'profile': p['profile'],
+                         'team': self.team(i), 'forfeited': i == self.forfeit_idx}
+                        for i, p in enumerate(self.players)],
+        }
+
+    def to_dict(self, viewer=None):
+        """Table state for one viewer. Hands are secret: you get your own cards
+        and nothing but a count for everyone else, so the same broadcast cannot
+        leak a hand to an opponent or to the people watching."""
+        me = self.pidx(viewer) if viewer else None
+        sort_by = self.trump or (self.upcard[1] if self.phase == 'bid1' else None)
+        legal = []
+        if (me is not None and self.phase == 'play' and me == self.turn
+                and not self.pending and not self.over):
+            legal = (e_follow(self.hands[me], self.trump,
+                              e_suit(self.trick[0]['card'], self.trump))
+                     if self.trick else list(self.hands[me]))
+        return {
+            'kind': 'euchre', 'variant': self.variant,
+            'players': [{'cid': p['cid'], 'name': p['name'], 'kind': p['kind'],
+                         'profile': p['profile'], 'team': self.team(i),
+                         'cards': len(self.hands[i]), 'out': i == self.sitting_out()}
+                        for i, p in enumerate(self.players)],
+            'me': me, 'legal': legal,
+            'hand': (sorted(self.hands[me], key=lambda c: e_sort_key(c, sort_by))
+                     if me is not None else []),
+            'scores': self.scores, 'target': E_TARGET, 'tricks': self.tricks,
+            'dealer': self.dealer, 'turn': self.turn, 'phase': self.phase,
+            'trump': self.trump, 'turned': self.turned, 'upcard': self.upcard,
+            'maker': self.maker, 'alone': self.alone, 'out': self.sitting_out(),
+            'trick': self.trick, 'trickNo': self.trick_no,
+            'lastTrick': self.last_trick, 'pending': self.pending,
+            'beat': self.beat_id(),
+            'handNo': self.hand_no, 'handSummary': self.hand_summary,
+            'over': self.over, 'reason': self.end_reason, 'log': self.log[-5:],
         }
 
 
@@ -712,6 +1302,12 @@ GAMES = {
                 'vnames': {'standard': 'Kalah'},
                 'blurb': 'Sow stones around the board, capture from an empty '
                          'pit, finish with the fullest store. 2 players.'},
+    'euchre': {'title': 'Euchre', 'min': 4, 'max': 4, 'engine': Euchre,
+               'icon': '🃏', 'variants': {'standard', 'stick'}, 'teams': True,
+               'vnames': {'standard': 'Standard', 'stick': 'Stick the Dealer'},
+               'blurb': 'Partners across the table, bowers over aces. Name '
+                        'trump and take three tricks — or get euchred. '
+                        'First to 10. 4 players.'},
 }
 
 # ============================================================
@@ -870,9 +1466,23 @@ def record_result(summary):
             deltas[a] += ks[a] * (sa - ea)
             deltas[b] += ks[b] * ((1.0 - sa) - (1.0 - ea))
 
-    shared = {}
+    # How many distinct sides share each place. In a partnership game a pair
+    # counts once, so both halves of a winning team are credited with a win
+    # instead of looking like they tied with each other.
+    units = {}
     for i in keep:
-        shared[place[i]] = shared.get(place[i], 0) + 1
+        t = ps[i].get('team')
+        units.setdefault(place[i], set()).add(('team', t) if t is not None
+                                              else ('seat', i))
+    shared = {k: len(v) for k, v in units.items()}
+
+    def against(i):
+        """Whose score counts as the one played against."""
+        t = ps[i].get('team')
+        if t is None:
+            return [j for j in keep if j != i]
+        return ([j for j in keep if ps[j].get('team') != t]
+                or [j for j in keep if j != i])
 
     entries = []
     for a, i in enumerate(keep):
@@ -887,7 +1497,7 @@ def record_result(summary):
         rec['losses'] += place[i] != 1
         rec['forfeits'] += quit_[i]
         rec['pointsFor'] += scores[i]
-        rec['pointsAgainst'] += max(scores[j] for j in keep if j != i)
+        rec['pointsAgainst'] += max(scores[j] for j in against(i))
         rec['bestScore'] = max(rec['bestScore'], scores[i])
         rec['penalties'] += int(ps[i].get('penalties') or 0)
         rec['placeSum'] += place[i]
@@ -969,6 +1579,8 @@ BRAINS = {
               'bounds': WEIGHT_BOUNDS, 'mutation': MUTATION, 'jitter': BIRTH_JITTER},
     'mancala': {'keys': M_KEYS, 'default': M_DEFAULT, 'bounds': M_BOUNDS,
                 'mutation': M_MUTATION, 'jitter': M_JITTER},
+    'euchre': {'keys': E_KEYS, 'default': E_DEFAULT, 'bounds': E_BOUNDS,
+               'mutation': E_MUTATION, 'jitter': E_JITTER},
 }
 
 # Rounds are attempts, not gains: most are rejected, so a small run usually
@@ -1160,13 +1772,18 @@ def sim_game(seats, game='quixx', variant=None):
 def match(prof, wa, wb, games, game='quixx'):
     """Unrated head-to-head between two brains wearing the same bot's
     handicaps. Returns wa's score share, seats alternated so going first is
-    not an advantage."""
+    not an advantage. In a partnership game each brain plays a whole side, so
+    seats 0 and 2 share one brain and seats 1 and 3 the other."""
     pts = 0.0
     for i in range(games):
         ia = i % 2
         ws = [None, None]
         ws[ia], ws[1 - ia] = wa, wb
-        g = sim_game([sim_seat('S0', prof, ws[0]), sim_seat('S1', prof, ws[1])], game)
+        if GAMES[game].get('teams'):
+            seats = [sim_seat('S%d' % k, prof, ws[k % 2]) for k in range(4)]
+        else:
+            seats = [sim_seat('S0', prof, ws[0]), sim_seat('S1', prof, ws[1])]
+        g = sim_game(seats, game)
         ta, tb = g.total(ia), g.total(1 - ia)
         pts += 0.5 if ta == tb else (1.0 if ta > tb else 0.0)
     return pts / games
@@ -1230,6 +1847,8 @@ def ladder_game(game='quixx'):
     if len(pool) < 2:
         return None
     cap = min(GAMES[game]['max'], len(pool))
+    if cap < GAMES[game]['min']:
+        return None            # not enough bots on the roster to fill a table
     lo = min(GAMES[game]['min'], cap)
     picks = random.sample(pool, random.randint(lo, cap))
     with LOCK:
@@ -1397,8 +2016,8 @@ def refresh_status(r):
     if r['status'] in ('playing', 'finished'):
         return
     seated = len(r['players']) + len(r['bots'])
-    r['status'] = ('ready' if len(r['players']) >= r['humans'] and seated >= 2
-                   else 'waiting')
+    r['status'] = ('ready' if len(r['players']) >= r['humans']
+                   and seated >= GAMES[r['game']]['min'] else 'waiting')
 
 
 def parse_table(body, joined, cap=MAX_SEATS):
@@ -1438,11 +2057,13 @@ def room_summary(r):
             'host': CLIENTS.get(r['host'], {}).get('name', '?')}
 
 
-def room_full(r):
+def room_full(r, cid=None):
+    """The room as one client sees it. Games with hidden information build a
+    different state per viewer, so this is never cached or shared."""
     d = room_summary(r)
     d['playerIds'] = list(r['players'])
     d['hostId'] = r['host']
-    d['state'] = r['engine'].to_dict() if r['engine'] else None
+    d['state'] = r['engine'].to_dict(cid) if r['engine'] else None
     return d
 
 
@@ -1541,9 +2162,10 @@ def broadcast_lobby():
 
 
 def broadcast_room(r):
-    d = room_full(r)
+    # built per recipient: in Euchre the same table looks different from every
+    # seat, and a spectator must not be handed anybody's cards
     for cid in list(r['players']) + list(r['spectators']):
-        push(cid, 'room', d)
+        push(cid, 'room', room_full(r, cid))
 
 
 def broadcast_stats():
@@ -1558,7 +2180,8 @@ def advance(r):
     g = r.get('engine')
     if not g:
         return
-    for _ in range(500):
+    # generous: a full Euchre match is many hands of many small bot decisions
+    for _ in range(3000):
         if not g.bot_step():
             break
     if g.over and r['status'] == 'playing':
@@ -1712,7 +2335,7 @@ class Handler(BaseHTTPRequestHandler):
             q.put(('lobby', hub_payload()))
             q.put(('stats', stats_payload()))
             if c['room'] and c['room'] in ROOMS:
-                q.put(('room', room_full(ROOMS[c['room']])))
+                q.put(('room', room_full(ROOMS[c['room']], cid)))
             broadcast_lobby()              # tell everyone else they arrived
         self.send_response(200)
         self.send_header('Content-Type', 'text/event-stream')
@@ -1770,7 +2393,7 @@ class Handler(BaseHTTPRequestHandler):
             CLIENTS[cid].setdefault('lobby', None)
             room = None
             if CLIENTS[cid]['room'] and CLIENTS[cid]['room'] in ROOMS:
-                room = room_full(ROOMS[CLIENTS[cid]['room']])
+                room = room_full(ROOMS[CLIENTS[cid]['room']], cid)
             broadcast_lobby()
             payload = {'ok': True, 'cid': cid, 'name': name, 'room': room,
                        'lobby': CLIENTS[cid].get('lobby'),
@@ -1854,7 +2477,7 @@ class Handler(BaseHTTPRequestHandler):
             c['room'] = rid
             broadcast_lobby()
             broadcast_room(ROOMS[rid])
-            self.send_json({'ok': True, 'room': room_full(ROOMS[rid])})
+            self.send_json({'ok': True, 'room': room_full(ROOMS[rid], cid)})
             return
 
         if cmd == 'leave':
@@ -1885,7 +2508,7 @@ class Handler(BaseHTTPRequestHandler):
 
             if action == 'join':
                 if cid in r['players']:
-                    self.send_json({'ok': True, 'room': room_full(r)})
+                    self.send_json({'ok': True, 'room': room_full(r, cid)})
                     return
                 if r['status'] not in ('waiting',) or len(r['players']) >= r['humans']:
                     self.err('Room is full or already playing — try spectating.')
@@ -1896,7 +2519,7 @@ class Handler(BaseHTTPRequestHandler):
                 refresh_status(r)
                 broadcast_lobby()
                 broadcast_room(r)
-                self.send_json({'ok': True, 'room': room_full(r)})
+                self.send_json({'ok': True, 'room': room_full(r, cid)})
                 return
 
             if action == 'spectate':
@@ -1908,7 +2531,7 @@ class Handler(BaseHTTPRequestHandler):
                 c['room'] = rid
                 broadcast_lobby()
                 broadcast_room(r)
-                self.send_json({'ok': True, 'room': room_full(r)})
+                self.send_json({'ok': True, 'room': room_full(r, cid)})
                 return
 
             if action == 'config':
@@ -1929,7 +2552,7 @@ class Handler(BaseHTTPRequestHandler):
                 refresh_status(r)
                 broadcast_lobby()
                 broadcast_room(r)
-                self.send_json({'ok': True, 'room': room_full(r)})
+                self.send_json({'ok': True, 'room': room_full(r, cid)})
                 return
 
             if action == 'start':
@@ -1937,8 +2560,10 @@ class Handler(BaseHTTPRequestHandler):
                     self.err('Only the host can start.')
                     return
                 seats = room_seats(r)
-                if len(seats) < GAMES[r['game']]['min']:
-                    self.err('A game needs at least 2 seats — add a player or an AI.')
+                need = GAMES[r['game']]['min']
+                if len(seats) < need:
+                    self.err('%s needs %d seats — add a player or an AI.'
+                             % (GAMES[r['game']]['title'], need))
                     return
                 if r['status'] == 'playing':
                     self.err('Already playing.')
