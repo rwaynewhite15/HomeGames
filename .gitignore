@@ -3,3 +3,9 @@ __pycache__/
 .DS_Store
 Thumbs.db
 .claude/
+
+# Live game data — the Pi runs the server, so its copies are the real ones.
+# Tracking these meant every machine's play collided on the same two files.
+stats.json
+ai_profiles.json
+*.tmp
