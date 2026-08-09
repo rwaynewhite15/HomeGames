@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell($s = \"C:\\\\Users\\\\Robert\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--HomeGames\\\\6ad46451-1b2a-4aa6-ab26-d29d36395a6f\\\\scratchpad\"; Copy-Item C:\\\\HomeGames\\\\stats.json \"$s\\\\stats.json\" -Force; Copy-Item C:\\\\HomeGames\\\\ai_profiles.json \"$s\\\\profiles.json\" -Force; Start-Process -FilePath python -ArgumentList \"$s\\\\testserver.py\" -WindowStyle Hidden -PassThru | Select-Object Id)",
+      "PowerShell(python \"C:\\\\Users\\\\Robert\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--HomeGames\\\\6ad46451-1b2a-4aa6-ab26-d29d36395a6f\\\\scratchpad\\\\mancala_test.py\")"
+    ]
+  }
+}

@@ -1,37 +1,59 @@
 {
   "version": 1,
-  "updated": "2026-08-08T15:27:40-04:00",
+  "updated": "2026-08-09T18:16:38+01:00",
   "players": {
     "bob": {
       "name": "Bob",
       "ai": false,
       "level": null,
       "firstSeen": "2026-08-08T00:08:07-04:00",
-      "lastPlayed": "2026-08-08T15:27:40-04:00",
+      "lastPlayed": "2026-08-09T14:23:17+01:00",
       "games": {
         "quixx": {
-          "elo": 1340.2,
-          "played": 19,
-          "wins": 12,
-          "losses": 7,
+          "elo": 1349.0,
+          "played": 32,
+          "wins": 17,
+          "losses": 15,
           "ties": 0,
           "forfeits": 2,
-          "pointsFor": 1076,
-          "pointsAgainst": 860,
-          "bestScore": 91,
-          "penalties": 17,
-          "streak": 2,
+          "pointsFor": 1843,
+          "pointsAgainst": 1767,
+          "bestScore": 93,
+          "penalties": 36,
+          "streak": -1,
           "bestStreak": 3,
-          "placeSum": 30,
-          "seatsSum": 44,
+          "placeSum": 53,
+          "seatsSum": 77,
           "variants": {
             "standard": {
-              "played": 17,
-              "wins": 12
+              "played": 29,
+              "wins": 16
             },
             "both": {
-              "played": 2,
-              "wins": 0
+              "played": 3,
+              "wins": 1
+            }
+          }
+        },
+        "mancala": {
+          "elo": 1094.4,
+          "played": 10,
+          "wins": 2,
+          "losses": 8,
+          "ties": 0,
+          "forfeits": 0,
+          "pointsFor": 200,
+          "pointsAgainst": 280,
+          "bestScore": 37,
+          "penalties": 0,
+          "streak": 1,
+          "bestStreak": 1,
+          "placeSum": 18,
+          "seatsSum": 20,
+          "variants": {
+            "standard": {
+              "played": 10,
+              "wins": 2
             }
           }
         }
@@ -43,39 +65,61 @@
       "ai": true,
       "profile": "ai_2e8d3274",
       "firstSeen": "2026-08-08T09:34:27-04:00",
-      "lastPlayed": "2026-08-08T15:25:12-04:00",
+      "lastPlayed": "2026-08-09T14:25:30+01:00",
       "games": {
         "quixx": {
-          "elo": 1101.8,
-          "played": 2739,
-          "wins": 769,
-          "losses": 1931,
-          "ties": 39,
+          "elo": 1112.4,
+          "played": 3555,
+          "wins": 995,
+          "losses": 2508,
+          "ties": 52,
           "forfeits": 0,
-          "pointsFor": 103124,
-          "pointsAgainst": 141727,
-          "bestScore": 100,
-          "penalties": 3908,
-          "streak": -8,
+          "pointsFor": 135829,
+          "pointsAgainst": 185699,
+          "bestScore": 108,
+          "penalties": 5229,
+          "streak": -3,
           "bestStreak": 6,
-          "placeSum": 5916,
-          "seatsSum": 8780,
+          "placeSum": 7655,
+          "seatsSum": 11372,
           "variants": {
             "numbers": {
-              "played": 670,
-              "wins": 186
+              "played": 880,
+              "wins": 246
             },
             "both": {
-              "played": 666,
-              "wins": 163
+              "played": 853,
+              "wins": 219
             },
             "standard": {
-              "played": 693,
-              "wins": 205
+              "played": 898,
+              "wins": 256
             },
             "colors": {
-              "played": 710,
-              "wins": 215
+              "played": 924,
+              "wins": 274
+            }
+          }
+        },
+        "mancala": {
+          "elo": 1172.9,
+          "played": 94,
+          "wins": 41,
+          "losses": 48,
+          "ties": 5,
+          "forfeits": 0,
+          "pointsFor": 2175,
+          "pointsAgainst": 2337,
+          "bestScore": 40,
+          "penalties": 0,
+          "streak": -2,
+          "bestStreak": 4,
+          "placeSum": 142,
+          "seatsSum": 188,
+          "variants": {
+            "standard": {
+              "played": 94,
+              "wins": 41
             }
           }
         }
@@ -86,39 +130,61 @@
       "ai": true,
       "profile": "ai_9b9cb91e",
       "firstSeen": "2026-08-08T09:34:27-04:00",
-      "lastPlayed": "2026-08-08T15:25:12-04:00",
+      "lastPlayed": "2026-08-09T14:25:30+01:00",
       "games": {
         "quixx": {
-          "elo": 1257.5,
-          "played": 2693,
-          "wins": 1092,
-          "losses": 1560,
-          "ties": 41,
+          "elo": 1292.5,
+          "played": 3486,
+          "wins": 1422,
+          "losses": 2002,
+          "ties": 62,
           "forfeits": 0,
-          "pointsFor": 119829,
-          "pointsAgainst": 133840,
+          "pointsFor": 157243,
+          "pointsAgainst": 174357,
           "bestScore": 129,
-          "penalties": 2888,
-          "streak": 3,
+          "penalties": 3712,
+          "streak": -1,
           "bestStreak": 8,
-          "placeSum": 5054,
-          "seatsSum": 8637,
+          "placeSum": 6525,
+          "seatsSum": 11164,
           "variants": {
             "numbers": {
-              "played": 674,
-              "wins": 286
+              "played": 880,
+              "wins": 374
             },
             "colors": {
-              "played": 675,
-              "wins": 268
+              "played": 886,
+              "wins": 367
             },
             "standard": {
-              "played": 679,
-              "wins": 261
+              "played": 869,
+              "wins": 334
             },
             "both": {
-              "played": 665,
-              "wins": 277
+              "played": 851,
+              "wins": 347
+            }
+          }
+        },
+        "mancala": {
+          "elo": 1422.9,
+          "played": 103,
+          "wins": 76,
+          "losses": 23,
+          "ties": 4,
+          "forfeits": 0,
+          "pointsFor": 2945,
+          "pointsAgainst": 1999,
+          "bestScore": 43,
+          "penalties": 0,
+          "streak": 5,
+          "bestStreak": 11,
+          "placeSum": 126,
+          "seatsSum": 206,
+          "variants": {
+            "standard": {
+              "played": 103,
+              "wins": 76
             }
           }
         }
@@ -129,39 +195,61 @@
       "ai": true,
       "profile": "ai_5f578318",
       "firstSeen": "2026-08-08T09:34:27-04:00",
-      "lastPlayed": "2026-08-08T15:27:40-04:00",
+      "lastPlayed": "2026-08-09T18:16:38+01:00",
       "games": {
         "quixx": {
-          "elo": 1339.9,
-          "played": 2730,
-          "wins": 1659,
-          "losses": 1027,
-          "ties": 44,
+          "elo": 1368.0,
+          "played": 3527,
+          "wins": 2136,
+          "losses": 1325,
+          "ties": 66,
           "forfeits": 0,
-          "pointsFor": 146813,
-          "pointsAgainst": 125115,
+          "pointsFor": 191848,
+          "pointsAgainst": 164080,
           "bestScore": 120,
-          "penalties": 2543,
-          "streak": -2,
+          "penalties": 3322,
+          "streak": -1,
           "bestStreak": 12,
-          "placeSum": 4147,
-          "seatsSum": 8816,
+          "placeSum": 5344,
+          "seatsSum": 11357,
           "variants": {
             "numbers": {
-              "played": 690,
-              "wins": 414
+              "played": 887,
+              "wins": 522
             },
             "both": {
-              "played": 675,
-              "wins": 414
+              "played": 853,
+              "wins": 522
             },
             "standard": {
-              "played": 675,
-              "wins": 413
+              "played": 899,
+              "wins": 548
             },
             "colors": {
-              "played": 690,
-              "wins": 418
+              "played": 888,
+              "wins": 544
+            }
+          }
+        },
+        "mancala": {
+          "elo": 1504.0,
+          "played": 104,
+          "wins": 88,
+          "losses": 13,
+          "ties": 3,
+          "forfeits": 0,
+          "pointsFor": 3244,
+          "pointsAgainst": 1748,
+          "bestScore": 42,
+          "penalties": 0,
+          "streak": 7,
+          "bestStreak": 20,
+          "placeSum": 117,
+          "seatsSum": 208,
+          "variants": {
+            "standard": {
+              "played": 104,
+              "wins": 88
             }
           }
         }
@@ -172,39 +260,61 @@
       "ai": true,
       "profile": "ai_0957bf40",
       "firstSeen": "2026-08-08T09:34:27-04:00",
-      "lastPlayed": "2026-08-08T15:25:12-04:00",
+      "lastPlayed": "2026-08-09T14:25:30+01:00",
       "games": {
         "quixx": {
-          "elo": 1149.6,
-          "played": 2717,
-          "wins": 572,
-          "losses": 2103,
-          "ties": 42,
+          "elo": 1102.5,
+          "played": 3509,
+          "wins": 738,
+          "losses": 2719,
+          "ties": 52,
           "forfeits": 0,
-          "pointsFor": 90432,
-          "pointsAgainst": 144458,
+          "pointsFor": 117528,
+          "pointsAgainst": 187729,
           "bestScore": 103,
-          "penalties": 4907,
-          "streak": -1,
+          "penalties": 6367,
+          "streak": -5,
           "bestStreak": 4,
-          "placeSum": 6340,
-          "seatsSum": 8772,
+          "placeSum": 8174,
+          "seatsSum": 11281,
           "variants": {
             "numbers": {
-              "played": 673,
-              "wins": 143
+              "played": 863,
+              "wins": 183
             },
             "colors": {
-              "played": 690,
-              "wins": 139
+              "played": 898,
+              "wins": 177
             },
             "both": {
-              "played": 669,
-              "wins": 141
+              "played": 862,
+              "wins": 189
             },
             "standard": {
-              "played": 685,
-              "wins": 149
+              "played": 886,
+              "wins": 189
+            }
+          }
+        },
+        "mancala": {
+          "elo": 1062.4,
+          "played": 99,
+          "wins": 25,
+          "losses": 69,
+          "ties": 5,
+          "forfeits": 0,
+          "pointsFor": 1973,
+          "pointsAgainst": 2779,
+          "bestScore": 35,
+          "penalties": 0,
+          "streak": -5,
+          "bestStreak": 3,
+          "placeSum": 168,
+          "seatsSum": 198,
+          "variants": {
+            "standard": {
+              "played": 99,
+              "wins": 25
             }
           }
         }
@@ -215,39 +325,189 @@
       "ai": true,
       "profile": "ai_f4720b9f",
       "firstSeen": "2026-08-08T09:34:27-04:00",
-      "lastPlayed": "2026-08-08T15:25:12-04:00",
+      "lastPlayed": "2026-08-09T14:25:30+01:00",
       "games": {
         "quixx": {
-          "elo": 1064.7,
-          "played": 2701,
-          "wins": 352,
-          "losses": 2327,
-          "ties": 22,
+          "elo": 1041.4,
+          "played": 3537,
+          "wins": 482,
+          "losses": 3021,
+          "ties": 34,
           "forfeits": 0,
-          "pointsFor": 72348,
-          "pointsAgainst": 145814,
+          "pointsFor": 96065,
+          "pointsAgainst": 191748,
           "bestScore": 89,
-          "penalties": 6085,
-          "streak": -7,
+          "penalties": 7981,
+          "streak": -11,
           "bestStreak": 3,
-          "placeSum": 6972,
-          "seatsSum": 8658,
+          "placeSum": 9081,
+          "seatsSum": 11309,
           "variants": {
             "numbers": {
-              "played": 682,
-              "wins": 86
+              "played": 895,
+              "wins": 123
             },
             "colors": {
-              "played": 694,
-              "wins": 88
+              "played": 928,
+              "wins": 120
             },
             "both": {
-              "played": 644,
-              "wins": 80
+              "played": 831,
+              "wins": 107
             },
             "standard": {
-              "played": 681,
-              "wins": 98
+              "played": 883,
+              "wins": 132
+            }
+          }
+        },
+        "mancala": {
+          "elo": 887.8,
+          "played": 90,
+          "wins": 8,
+          "losses": 79,
+          "ties": 3,
+          "forfeits": 0,
+          "pointsFor": 1463,
+          "pointsAgainst": 2857,
+          "bestScore": 30,
+          "penalties": 0,
+          "streak": -13,
+          "bestStreak": 1,
+          "placeSum": 169,
+          "seatsSum": 180,
+          "variants": {
+            "standard": {
+              "played": 90,
+              "wins": 8
+            }
+          }
+        }
+      }
+    },
+    "fig 2": {
+      "name": "Fig 2",
+      "ai": true,
+      "profile": "ai_5f578318",
+      "firstSeen": "2026-08-09T03:25:06+01:00",
+      "lastPlayed": "2026-08-09T03:25:06+01:00",
+      "games": {
+        "quixx": {
+          "elo": 1222.5,
+          "played": 1,
+          "wins": 0,
+          "losses": 0,
+          "ties": 1,
+          "forfeits": 0,
+          "pointsFor": 49,
+          "pointsAgainst": 49,
+          "bestScore": 49,
+          "penalties": 1,
+          "streak": 0,
+          "bestStreak": 0,
+          "placeSum": 1,
+          "seatsSum": 3,
+          "variants": {
+            "standard": {
+              "played": 1,
+              "wins": 0
+            }
+          }
+        }
+      }
+    },
+    "madi": {
+      "name": "Madi",
+      "ai": false,
+      "profile": null,
+      "firstSeen": "2026-08-09T03:35:58+01:00",
+      "lastPlayed": "2026-08-09T04:45:40+01:00",
+      "games": {
+        "quixx": {
+          "elo": 1157.5,
+          "played": 3,
+          "wins": 0,
+          "losses": 3,
+          "ties": 0,
+          "forfeits": 0,
+          "pointsFor": 162,
+          "pointsAgainst": 269,
+          "bestScore": 67,
+          "penalties": 8,
+          "streak": -3,
+          "bestStreak": 0,
+          "placeSum": 7,
+          "seatsSum": 7,
+          "variants": {
+            "standard": {
+              "played": 2,
+              "wins": 0
+            },
+            "both": {
+              "played": 1,
+              "wins": 0
+            }
+          }
+        }
+      }
+    },
+    "bruce": {
+      "name": "Bruce",
+      "ai": false,
+      "profile": null,
+      "firstSeen": "2026-08-09T18:16:38+01:00",
+      "lastPlayed": "2026-08-09T18:16:38+01:00",
+      "games": {
+        "quixx": {
+          "elo": 1229.5,
+          "played": 1,
+          "wins": 1,
+          "losses": 0,
+          "ties": 0,
+          "forfeits": 0,
+          "pointsFor": 74,
+          "pointsAgainst": 60,
+          "bestScore": 74,
+          "penalties": 0,
+          "streak": 1,
+          "bestStreak": 1,
+          "placeSum": 1,
+          "seatsSum": 3,
+          "variants": {
+            "standard": {
+              "played": 1,
+              "wins": 1
+            }
+          }
+        }
+      }
+    },
+    "bill": {
+      "name": "Bill",
+      "ai": false,
+      "profile": null,
+      "firstSeen": "2026-08-09T18:16:38+01:00",
+      "lastPlayed": "2026-08-09T18:16:38+01:00",
+      "games": {
+        "quixx": {
+          "elo": 1181.5,
+          "played": 1,
+          "wins": 0,
+          "losses": 1,
+          "ties": 0,
+          "forfeits": 0,
+          "pointsFor": 48,
+          "pointsAgainst": 74,
+          "bestScore": 48,
+          "penalties": 0,
+          "streak": -1,
+          "bestStreak": 0,
+          "placeSum": 3,
+          "seatsSum": 3,
+          "variants": {
+            "standard": {
+              "played": 1,
+              "wins": 0
             }
           }
         }
@@ -255,6 +515,838 @@
     }
   },
   "history": [
+    {
+      "ts": "2026-08-09T18:16:38+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 3,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Bruce",
+          "score": 74,
+          "place": 1,
+          "result": "win",
+          "elo": 1229.5,
+          "eloDelta": 29.5,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Fig",
+          "score": 60,
+          "place": 2,
+          "result": "loss",
+          "elo": 1368.0,
+          "eloDelta": -5.5,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bill",
+          "score": 48,
+          "place": 3,
+          "result": "loss",
+          "elo": 1181.5,
+          "eloDelta": -18.5,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T14:23:17+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 86,
+          "place": 1,
+          "result": "win",
+          "elo": 1396.3,
+          "eloDelta": 11.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 57,
+          "place": 2,
+          "result": "loss",
+          "elo": 1349.0,
+          "eloDelta": -11.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T04:45:40+01:00",
+      "game": "quixx",
+      "variant": "both",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 69,
+          "place": 1,
+          "result": "win",
+          "elo": 1360.1,
+          "eloDelta": 6.2,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Madi",
+          "score": 67,
+          "place": 2,
+          "result": "loss",
+          "elo": 1157.5,
+          "eloDelta": -12.4,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T04:34:37+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Fig took a 4th penalty.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 59,
+          "place": 1,
+          "result": "win",
+          "elo": 1353.9,
+          "eloDelta": 29.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Fig",
+          "score": 57,
+          "place": 2,
+          "result": "loss",
+          "elo": 1385.2,
+          "eloDelta": -14.6,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T03:47:46+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Bob took a 4th penalty.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 93,
+          "place": 1,
+          "result": "win",
+          "elo": 1324.8,
+          "eloDelta": 15.8,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Madi",
+          "score": 57,
+          "place": 2,
+          "result": "loss",
+          "elo": 1169.9,
+          "eloDelta": -15.8,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T03:35:58+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 3,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 107,
+          "place": 1,
+          "result": "win",
+          "elo": 1399.8,
+          "eloDelta": 7.6,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 74,
+          "place": 2,
+          "result": "loss",
+          "elo": 1309.0,
+          "eloDelta": -0.9,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Madi",
+          "score": 38,
+          "place": 3,
+          "result": "loss",
+          "elo": 1185.7,
+          "eloDelta": -14.3,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T03:25:06+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 3,
+      "reason": "Bob took a 4th penalty.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 49,
+          "place": 1,
+          "result": "tie",
+          "elo": 1392.2,
+          "eloDelta": 2.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Fig 2",
+          "score": 49,
+          "place": 1,
+          "result": "tie",
+          "elo": 1222.5,
+          "eloDelta": 22.5,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 10,
+          "place": 3,
+          "result": "loss",
+          "elo": 1309.9,
+          "eloDelta": -26.6,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T03:02:54+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 82,
+          "place": 1,
+          "result": "win",
+          "elo": 1336.5,
+          "eloDelta": 27.9,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Fig",
+          "score": 59,
+          "place": 2,
+          "result": "loss",
+          "elo": 1351.6,
+          "eloDelta": -13.9,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-09T03:00:52+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 63,
+          "place": 1,
+          "result": "win",
+          "elo": 1365.5,
+          "eloDelta": 11.2,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 51,
+          "place": 2,
+          "result": "loss",
+          "elo": 1308.6,
+          "eloDelta": -22.4,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T21:52:19+01:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Bob wins 35\u201313.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 35,
+          "place": 1,
+          "result": "win",
+          "elo": 1094.4,
+          "eloDelta": 14.9,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Otter",
+          "score": 13,
+          "place": 2,
+          "result": "loss",
+          "elo": 932.8,
+          "eloDelta": -7.4,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_f4720b9f"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T21:51:18+01:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Otter wins 30\u201318.",
+      "players": [
+        {
+          "name": "Otter",
+          "score": 30,
+          "place": 1,
+          "result": "win",
+          "elo": 940.2,
+          "eloDelta": 18.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_f4720b9f"
+        },
+        {
+          "name": "Bob",
+          "score": 18,
+          "place": 2,
+          "result": "loss",
+          "elo": 1079.5,
+          "eloDelta": -36.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T21:49:59+01:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Waffles wins 27\u201321.",
+      "players": [
+        {
+          "name": "Waffles",
+          "score": 27,
+          "place": 1,
+          "result": "win",
+          "elo": 1191.1,
+          "eloDelta": 10.5,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_2e8d3274"
+        },
+        {
+          "name": "Bob",
+          "score": 21,
+          "place": 2,
+          "result": "loss",
+          "elo": 1115.6,
+          "eloDelta": -21.0,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T21:48:16+01:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 91,
+          "place": 1,
+          "result": "win",
+          "elo": 1331.0,
+          "eloDelta": 28.5,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Fig",
+          "score": 85,
+          "place": 2,
+          "result": "loss",
+          "elo": 1354.3,
+          "eloDelta": -14.3,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:23:25-04:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 3,
+      "reason": "Fig took a 4th penalty.",
+      "players": [
+        {
+          "name": "Domino",
+          "score": 64,
+          "place": 1,
+          "result": "win",
+          "elo": 1295.1,
+          "eloDelta": 13.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 59,
+          "place": 2,
+          "result": "loss",
+          "elo": 1302.5,
+          "eloDelta": 0.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Fig",
+          "score": 41,
+          "place": 3,
+          "result": "loss",
+          "elo": 1312.3,
+          "eloDelta": -13.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:20:13-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Bob wins 37\u201311.",
+      "players": [
+        {
+          "name": "Bob",
+          "score": 37,
+          "place": 1,
+          "result": "win",
+          "elo": 1136.6,
+          "eloDelta": 20.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Pepper",
+          "score": 11,
+          "place": 2,
+          "result": "loss",
+          "elo": 1050.1,
+          "eloDelta": -10.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_0957bf40"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:19:05-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Pepper wins 31\u201317.",
+      "players": [
+        {
+          "name": "Pepper",
+          "score": 31,
+          "place": 1,
+          "result": "win",
+          "elo": 1060.2,
+          "eloDelta": 15.4,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_0957bf40"
+        },
+        {
+          "name": "Bob",
+          "score": 17,
+          "place": 2,
+          "result": "loss",
+          "elo": 1116.5,
+          "eloDelta": -30.9,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:18:03-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Domino wins 41\u20137.",
+      "players": [
+        {
+          "name": "Domino",
+          "score": 41,
+          "place": 1,
+          "result": "win",
+          "elo": 1423.4,
+          "eloDelta": 4.3,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 7,
+          "place": 2,
+          "result": "loss",
+          "elo": 1147.4,
+          "eloDelta": -8.7,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:17:44-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Domino wins 36\u201312.",
+      "players": [
+        {
+          "name": "Domino",
+          "score": 36,
+          "place": 1,
+          "result": "win",
+          "elo": 1419.1,
+          "eloDelta": 4.6,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 12,
+          "place": 2,
+          "result": "loss",
+          "elo": 1156.1,
+          "eloDelta": -9.2,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:17:08-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Domino wins 33\u201315.",
+      "players": [
+        {
+          "name": "Domino",
+          "score": 33,
+          "place": 1,
+          "result": "win",
+          "elo": 1414.5,
+          "eloDelta": 4.9,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 15,
+          "place": 2,
+          "result": "loss",
+          "elo": 1165.3,
+          "eloDelta": -9.9,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:15:03-04:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 4,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 57,
+          "place": 1,
+          "result": "win",
+          "elo": 1325.4,
+          "eloDelta": 8.9,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 44,
+          "place": 2,
+          "result": "loss",
+          "elo": 1302.4,
+          "eloDelta": 3.2,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Domino",
+          "score": 27,
+          "place": 3,
+          "result": "loss",
+          "elo": 1282.0,
+          "eloDelta": -5.9,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Otter",
+          "score": 18,
+          "place": 4,
+          "result": "loss",
+          "elo": 1042.8,
+          "eloDelta": -4.5,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_f4720b9f"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:13:55-04:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 4,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 84,
+          "place": 1,
+          "result": "win",
+          "elo": 1316.5,
+          "eloDelta": 9.3,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Domino",
+          "score": 57,
+          "place": 2,
+          "result": "loss",
+          "elo": 1287.9,
+          "eloDelta": 2.2,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 51,
+          "place": 3,
+          "result": "loss",
+          "elo": 1299.2,
+          "eloDelta": -13.8,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        },
+        {
+          "name": "Otter",
+          "score": 35,
+          "place": 4,
+          "result": "loss",
+          "elo": 1047.3,
+          "eloDelta": -4.6,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_f4720b9f"
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:12:09-04:00",
+      "game": "quixx",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Two rows are locked.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 72,
+          "place": 1,
+          "result": "win",
+          "elo": 1307.2,
+          "eloDelta": 13.6,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 27,
+          "place": 2,
+          "result": "loss",
+          "elo": 1313.0,
+          "eloDelta": -27.2,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T16:05:42-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Domino wins 25\u201323.",
+      "players": [
+        {
+          "name": "Domino",
+          "score": 25,
+          "place": 1,
+          "result": "win",
+          "elo": 1372.1,
+          "eloDelta": 6.3,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_9b9cb91e"
+        },
+        {
+          "name": "Bob",
+          "score": 23,
+          "place": 2,
+          "result": "loss",
+          "elo": 1175.2,
+          "eloDelta": -12.7,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
+    {
+      "ts": "2026-08-08T15:59:59-04:00",
+      "game": "mancala",
+      "variant": "standard",
+      "seats": 2,
+      "reason": "Fig wins 33\u201315.",
+      "players": [
+        {
+          "name": "Fig",
+          "score": 33,
+          "place": 1,
+          "result": "win",
+          "elo": 1394.7,
+          "eloDelta": 6.1,
+          "forfeited": false,
+          "ai": true,
+          "profile": "ai_5f578318"
+        },
+        {
+          "name": "Bob",
+          "score": 15,
+          "place": 2,
+          "result": "loss",
+          "elo": 1187.9,
+          "eloDelta": -12.1,
+          "forfeited": false,
+          "ai": false,
+          "profile": null
+        }
+      ]
+    },
     {
       "ts": "2026-08-08T15:27:40-04:00",
       "game": "quixx",
