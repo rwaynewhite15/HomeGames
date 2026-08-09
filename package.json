@@ -1,0 +1,24 @@
+{
+  "name": "homegames",
+  "version": "1.0.0",
+  "description": "Run this server (from a pi for low power) to host a local network game room with player profiles including ELO Ratings. Games are being added periodically.",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js",
+    "test": "node tests/basic.test.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "http://localhost:26831/rwaynewhite15/HomeGames"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^13.0.3",
+    "express": "^5.2.1",
+    "express-rate-limit": "^8.6.2",
+    "uuid": "^14.0.1"
+  }
+}
