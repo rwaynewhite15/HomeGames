@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>HomeGames 🎮</title>
+  <link rel="stylesheet" href="/css/style.css" />
+</head>
+<body>
+
+<nav>
+  <a href="#" class="nav-logo" onclick="showView('lobby')">🎮 HomeGames</a>
+  <button class="nav-btn active" id="nav-lobby" onclick="showView('lobby')">🏠 <span>Lobby</span></button>
+  <button class="nav-btn" id="nav-players" onclick="showView('players')">👥 <span>Players</span></button>
+  <button class="nav-btn" id="nav-leaderboard" onclick="showView('leaderboard')">🏆 <span>Leaderboard</span></button>
+  <button class="nav-btn" id="nav-history" onclick="showView('history')">📋 <span>History</span></button>
+</nav>
+
+<main>
+  <!-- ===== LOBBY VIEW ===== -->
+  <div class="view active" id="view-lobby">
+    <h1 class="page-title">Game Lobby</h1>
+    <div class="section-title">Choose a Game</div>
+    <div class="game-grid">
+      <div class="game-card" onclick="openGameSetup('tictactoe')">
+        <div class="game-icon">⭕</div>
+        <h3>Tic-Tac-Toe</h3>
+        <p>2 players · Classic 3×3</p>
+      </div>
+      <div class="game-card" onclick="openGameSetup('connect4')">
+        <div class="game-icon">🔴</div>
+        <h3>Connect Four</h3>
+        <p>2 players · 7×6 grid</p>
+      </div>
+    </div>
+
+    <div class="section-title">Quick Leaderboard</div>
+    <div class="card">
+      <table class="player-table" id="lobby-leaderboard">
+        <thead><tr>
+          <th>#</th><th>Player</th><th>ELO</th><th>W / L / D</th>
+        </tr></thead>
+        <tbody id="lobby-lb-body">
+          <tr><td colspan="4" style="color:var(--text-dim);padding:1.5rem;text-align:center">No players yet. <a href="#" onclick="showView('players')" style="color:var(--accent)">Add some!</a></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== PLAYERS VIEW ===== -->
+  <div class="view" id="view-players">
+    <div class="flex-between">
+      <h1 class="page-title" style="margin-bottom:0">Players</h1>
+      <button class="btn btn-primary" onclick="openAddPlayer()">＋ Add Player</button>
+    </div>
+    <div class="card" style="margin-top:1rem">
+      <table class="player-table" id="players-table">
+        <thead><tr>
+          <th>Avatar</th><th>Name</th><th>ELO</th><th>W / L / D</th><th>Actions</th>
+        </tr></thead>
+        <tbody id="players-body">
+          <tr><td colspan="5" style="color:var(--text-dim);padding:1.5rem;text-align:center">No players yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== LEADERBOARD VIEW ===== -->
+  <div class="view" id="view-leaderboard">
+    <h1 class="page-title">Leaderboard</h1>
+    <div class="card">
+      <table class="player-table">
+        <thead><tr>
+          <th>Rank</th><th>Player</th><th>ELO</th><th>W</th><th>L</th><th>D</th><th>Win%</th>
+        </tr></thead>
+        <tbody id="leaderboard-body">
+          <tr><td colspan="7" style="color:var(--text-dim);padding:1.5rem;text-align:center">No players yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== HISTORY VIEW ===== -->
+  <div class="view" id="view-history">
+    <h1 class="page-title">Game History</h1>
+    <div class="card">
+      <table class="history-table">
+        <thead><tr>
+          <th>Date</th><th>Game</th><th>Players</th><th>Winner</th>
+        </tr></thead>
+        <tbody id="history-body">
+          <tr><td colspan="4" style="color:var(--text-dim);padding:1.5rem;text-align:center">No games played yet.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- ===== TIC-TAC-TOE VIEW ===== -->
+  <div class="view" id="view-tictactoe">
+    <div class="flex-between">
+      <h1 class="page-title" style="margin-bottom:0">Tic-Tac-Toe</h1>
+      <button class="btn btn-secondary" onclick="showView('lobby')">← Back to Lobby</button>
+    </div>
+    <div id="ttt-status" class="game-status playing">Loading…</div>
+    <div class="ttt-board" id="ttt-board"></div>
+    <div class="text-center">
+      <button class="btn btn-secondary" onclick="tttReset()" id="ttt-reset-btn">🔄 New Game</button>
+    </div>
+    <div class="card" style="margin-top:1.5rem">
+      <div id="ttt-player-info"></div>
+    </div>
+  </div>
+
+  <!-- ===== CONNECT FOUR VIEW ===== -->
+  <div class="view" id="view-connect4">
+    <div class="flex-between">
+      <h1 class="page-title" style="margin-bottom:0">Connect Four</h1>
+      <button class="btn btn-secondary" onclick="showView('lobby')">← Back to Lobby</button>
+    </div>
+    <div id="c4-status" class="game-status playing">Loading…</div>
+    <div class="c4-col-btns" id="c4-col-btns"></div>
+    <div class="c4-wrapper"><div class="c4-board" id="c4-board"></div></div>
+    <div class="text-center" style="margin-top:1rem">
+      <button class="btn btn-secondary" onclick="c4Reset()">🔄 New Game</button>
+    </div>
+    <div class="card" style="margin-top:1.5rem">
+      <div id="c4-player-info"></div>
+    </div>
+  </div>
+</main>
+
+<!-- ===== MODALS ===== -->
+<!-- Game Setup Modal -->
+<div class="modal-overlay" id="modal-game-setup">
+  <div class="modal">
+    <div class="modal-title" id="modal-game-title">Set Up Game</div>
+    <div class="form-group">
+      <label>Player 1 (X / 🔴)</label>
+      <select id="setup-p1"></select>
+    </div>
+    <div class="form-group">
+      <label>Player 2 (O / 🟡) — select AI for solo play</label>
+      <select id="setup-p2"></select>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-game-setup')">Cancel</button>
+      <button class="btn btn-primary" onclick="startGame()">▶ Start Game</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add/Edit Player Modal -->
+<div class="modal-overlay" id="modal-player">
+  <div class="modal">
+    <div class="modal-title" id="modal-player-title">Add Player</div>
+    <div class="form-group">
+      <label for="player-name-input">Name</label>
+      <input type="text" id="player-name-input" placeholder="Enter player name" maxlength="32" />
+    </div>
+    <div class="form-group">
+      <label>Avatar</label>
+      <div class="avatar-grid" id="avatar-grid"></div>
+    </div>
+    <input type="hidden" id="edit-player-id" />
+    <div class="modal-actions">
+      <button class="btn btn-secondary" onclick="closeModal('modal-player')">Cancel</button>
+      <button class="btn btn-primary" id="save-player-btn" onclick="savePlayer()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Toast Container -->
+<div id="toast-container"></div>
+
+<script src="/js/api.js"></script>
+<script src="/js/ui.js"></script>
+<script src="/js/tictactoe.js"></script>
+<script src="/js/connect4.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
