@@ -312,6 +312,80 @@
     .eseat{max-width:96px;font-size:.76em;}
   }
 
+  /* ---------- chess ----------
+     The board is a plain 8x8 grid sized off its own width, so it stays square
+     from a phone to a desktop without measuring anything in script. Pieces are
+     the solid Unicode glyphs for both colours, coloured by CSS rather than
+     using the outline set: the outline glyphs render hairline-thin or fall
+     back to a different face on a lot of devices, and a white king you cannot
+     see is worse than no board at all. */
+  .cwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px;}
+  .cboard-box{flex:1 1 340px;min-width:0;max-width:520px;}
+  /* Both axes are stated, and as minmax(0,1fr) rather than 1fr: a plain 1fr
+     track will not shrink below its content, so the ranks holding pieces grow
+     to fit a glyph while the empty ranks collapse — eight equal files but
+     eight unequal ranks. Pinning the minimum to 0 makes every square an exact
+     eighth of a square board whatever is standing on it. */
+  .cboard{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));
+    grid-template-rows:repeat(8,minmax(0,1fr));width:100%;aspect-ratio:1/1;
+    border:6px solid #6f4826;border-radius:12px;overflow:hidden;
+    box-shadow:inset 0 2px 10px rgba(0,0,0,.3),0 1px 0 #fff;}
+  .csq{position:relative;display:flex;align-items:center;justify-content:center;
+    min-width:0;min-height:0;
+    font-size:min(7.4vw,38px);line-height:1;user-select:none;background:#efdfc0;}
+  .csq.dark{background:#b58863;}
+  .csq.pickable{cursor:pointer;}
+  /* The piece itself. White gets a dark rim so it reads on the light squares. */
+  .cpc{pointer-events:none;}
+  .cpc.w{color:#fff;text-shadow:0 0 1px #2b2b33,0 0 2px #2b2b33,1px 1px 0 #2b2b33,-1px -1px 0 #2b2b33;}
+  .cpc.b{color:#25242a;text-shadow:0 0 1px rgba(255,255,255,.5);}
+  /* Where the last move went, so a move made while you were looking away is
+     still visible when you look back. */
+  .csq.last::after{content:'';position:absolute;inset:0;background:rgba(227,165,30,.42);}
+  .csq.sel::after{content:'';position:absolute;inset:0;background:rgba(63,111,196,.45);}
+  /* A destination: a dot on an empty square, a ring around something to take,
+     which is the convention every chess site uses and nobody has to be told. */
+  .csq.dest::before{content:'';position:absolute;left:50%;top:50%;width:26%;height:26%;
+    transform:translate(-50%,-50%);border-radius:50%;background:rgba(43,43,51,.34);}
+  .csq.dest.occupied::before{width:86%;height:86%;background:none;border-radius:50%;
+    border:5px solid rgba(43,43,51,.34);}
+  .csq.check::after{content:'';position:absolute;inset:0;
+    background:radial-gradient(circle,rgba(214,69,69,.75) 10%,rgba(214,69,69,0) 72%);}
+  .csq .co{position:absolute;font-size:9px;font-weight:700;opacity:.55;pointer-events:none;}
+  .csq .co.f{right:2px;bottom:1px;}
+  .csq .co.r{left:2px;top:1px;}
+
+  .cside{flex:1 1 190px;min-width:0;display:flex;flex-direction:column;gap:10px;}
+  .ctaken{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:22px;min-height:26px;}
+  .ctaken .lbl{font-size:11px;color:#777;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
+  .ctaken .adv{font-size:12px;color:#777;font-weight:700;}
+  .cmoves{background:#fff;border:1px solid #e6e2da;border-radius:12px;padding:8px 10px;
+    max-height:210px;overflow:auto;font-size:.86em;}
+  .cmoves table{border-collapse:collapse;width:100%;}
+  .cmoves td{padding:2px 4px;}
+  .cmoves td.n{color:#999;width:2.2em;}
+  .cmoves td.m{font-weight:600;}
+  .cmoves tr.now td{background:#fdf4dd;}
+  .cempty{color:#999;font-size:.86em;}
+
+  /* Promotion: asked rather than assumed. The server would take a queen if we
+     said nothing, but underpromotion is a real move and this is the only
+     moment it can be chosen. */
+  .cpromo{display:flex;gap:8px;justify-content:center;margin-bottom:10px;flex-wrap:wrap;}
+  .cpromo button{font-size:30px;line-height:1;background:#fff;border:2px solid #d8d2c6;
+    border-radius:12px;padding:4px 12px;}
+  .cpromo button:hover{border-color:var(--blue);}
+
+  .clearn{background:#fff;border:1px solid #e6e2da;border-radius:12px;padding:10px 12px;font-size:.84em;}
+  .clearn h4{margin:0 0 6px;font-size:1em;}
+  .clearn div{display:flex;justify-content:space-between;gap:10px;padding:2px 0;color:#555;}
+  .clearn b{color:var(--ink);}
+  .clearn .note{display:block;color:#777;margin-top:6px;line-height:1.45;}
+  @media(max-width:560px){
+    .cboard-box{flex:1 1 100%;max-width:none;}
+    .csq{font-size:min(9.6vw,34px);}
+  }
+
   /* waiting room */
   .wait-box{text-align:center;padding:30px 10px;}
   .wait-box .spin{font-size:2.4em;animation:bob 1.4s infinite;}
@@ -439,6 +513,17 @@
     <p style="color:#777;font-size:.85em">The bots search ahead — the higher their rating, the deeper they look.</p>
     <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
   </div>
+  <div class="modal rules" id="rulesChess" style="display:none">
+    <h2>How to play Chess</h2>
+    <p><b>You are White</b>, at the bottom of the board, and White moves first. Tap a piece to see everywhere it can legally go, then tap one of the marked squares to move it. Tap it again to change your mind.</p>
+    <p><b>A dot</b> on a square means you can move there. <b>A ring</b> around a piece means you can take it. Only pieces that actually have a move will lift, so nothing you can tap is ever illegal.</p>
+    <p><b>The last move played</b> stays highlighted, so a move made while you were looking away is still there when you look back. A king in check gets a red glow.</p>
+    <p><b>Pawns that reach the far side</b> ask what to promote to — usually a queen, but the other three are there when you want them.</p>
+    <p><b>Castling</b> is made by moving the king two squares towards the rook; the rook comes across on its own. <b>En passant</b> is offered the same way as any other pawn move.</p>
+    <p><b>Game over:</b> checkmate, or a draw by stalemate, repetition, the fifty-move rule or insufficient material. You can also resign.</p>
+    <p style="color:#777;font-size:.85em">This bot keeps a book on <i>you</i>: which openings you play and how those games went. It gets harder the more you play it, and the panel under the board shows what it has picked up.</p>
+    <button class="big-btn" onclick="document.getElementById('rulesOverlay').classList.remove('show')">Got it</button>
+  </div>
   <div class="modal rules" id="rulesEuchre" style="display:none">
     <h2>How to play Euchre</h2>
     <p><b>The table:</b> four players in two partnerships. <b>Your partner sits across from you</b> — the player at the top of the felt. You win points together.</p>
@@ -527,6 +612,7 @@ function showRules(){
   $('rulesQuixx').style.display=(gk==='quixx')?'':'none';
   $('rulesMancala').style.display=(gk==='mancala')?'':'none';
   $('rulesEuchre').style.display=(gk==='euchre')?'':'none';
+  $('rulesChess').style.display=(gk==='chess')?'':'none';
   $('rulesOverlay').classList.add('show');
 }
 function hideEnd(){$('endOverlay').classList.remove('show');}
@@ -1040,6 +1126,7 @@ function renderRoom(){
   const me=myIdx();
   if(g.kind==='mancala'){renderMancala(g,me,body);return;}
   if(g.kind==='euchre'){renderEuchre(g,me,body);return;}
+  if(g.kind==='chess'){renderChess(g,me,body);return;}
   const rollKey=g.dice?JSON.stringify(g.dice):null;
   const justRolled=rollKey&&rollKey!==lastRollKey;
   lastRollKey=rollKey;
@@ -1189,6 +1276,257 @@ function renderMancala(g,me,body){
     $('rematchBtn').style.display=isHost()?'':'none';
     $('endOverlay').classList.add('show');
   }
+}
+
+/* ---------- Chess ----------
+   The server is authoritative and hands over everything this needs: the board
+   as eight rows of 'wQ'-style codes, and `legal` as {fromSquare:[toSquare,…]}.
+   So there is no rules engine here — no move generation, no check detection,
+   nothing to disagree with the server about. Clicking is filtered through
+   `legal` and the move goes back as UCI.
+
+   Two clicks: pick up a piece, put it down. Picking up is only offered for
+   squares `legal` actually names, so a piece that cannot move does not lift. */
+const C_GLYPH={K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'};
+const C_VALUE={Q:9,R:5,B:3,N:3,P:1,K:0};
+const C_FILES='abcdefgh';
+let chessSel=null;        // square a piece has been lifted from, e.g. 'e2'
+let chessPromo=null;      // {from,to} waiting on which piece to promote to
+let chessSeenFen=null;    // the position the two above were chosen against
+
+function chessMove(uci){chessSel=null;chessPromo=null;act('move',{uci:uci});}
+function chessResign(){
+  if(confirm('Resign this game?'))act('resign');
+}
+/* Lifting a piece, putting it down, or changing your mind — all re-render from
+   the state we already have, so none of them waits on the server. */
+function chessTap(sq){
+  const g=room&&room.state;if(!g)return;
+  if(chessSel===sq){chessSel=null;renderRoom();return;}
+  const dests=(g.legal||{})[chessSel]||[];
+  if(chessSel&&dests.indexOf(sq)>=0){
+    // A pawn arriving on the far rank is the one move that needs more than
+    // two squares to describe.
+    const pc=chessPieceAt(g,chessSel);
+    const rank=sq[1];
+    if(pc&&pc[1]==='P'&&(rank==='8'||rank==='1')){
+      chessPromo={from:chessSel,to:sq};renderRoom();return;
+    }
+    chessMove(chessSel+sq);return;
+  }
+  chessSel=(g.legal||{})[sq]?sq:null;
+  chessPromo=null;
+  renderRoom();
+}
+function chessPromote(piece){
+  if(!chessPromo)return;
+  chessMove(chessPromo.from+chessPromo.to+piece);
+}
+function chessPieceAt(g,sq){
+  const f=C_FILES.indexOf(sq[0]),r=Number(sq[1]);
+  if(f<0||!r)return null;
+  return g.board[8-r][f];       // board[0] is rank 8
+}
+/* What each side has taken, worked out by what is missing from the board
+   rather than kept as a list — the position is the only thing the server
+   sends, and it is enough.
+
+   Named by the taker throughout, because the arithmetic runs the other way
+   and one sign slip puts a player's advantage against their opponent's name:
+   the pieces missing from White are the pieces Black has taken. */
+function chessTaken(g){
+  const full={P:8,N:2,B:2,R:2,Q:1,K:1};
+  const left={w:{},b:{}};
+  for(const row of g.board)for(const cell of row){
+    if(cell)left[cell[0]][cell[1]]=(left[cell[0]][cell[1]]||0)+1;
+  }
+  const gone={w:[],b:[]};
+  const worth={w:0,b:0};
+  for(const side of ['w','b']){
+    for(const k in full){
+      const n=full[k]-(left[side][k]||0);
+      for(let i=0;i<n;i++)gone[side].push(k);
+      worth[side]+=n*C_VALUE[k];
+    }
+  }
+  return {
+    byWhite:gone.b, byBlack:gone.w,                       // what each has taken
+    edgeWhite:Math.max(0,worth.b-worth.w),                // and by how much it leads
+    edgeBlack:Math.max(0,worth.w-worth.b),
+  };
+}
+function chessPieceHtml(code,cls){
+  return '<span class="cpc '+code[0]+(cls?' '+cls:'')+'">'+C_GLYPH[code[1]]+'</span>';
+}
+
+function renderChess(g,me,body){
+  // Seat 0 is White. A spectator watches over White's shoulder.
+  const seat=me>=0?me:0;
+  const flip=seat===1;
+  const myTurn=me>=0&&g.active===me&&!g.over;
+  const legal=g.legal||{};
+
+  // The lifted piece belongs to the position it was lifted in; a move by
+  // either side puts it down.
+  if(chessSeenFen!==g.fen){chessSeenFen=g.fen;chessSel=null;chessPromo=null;}
+  if(!myTurn){chessSel=null;chessPromo=null;}
+
+  let h='<div class="dice-tray">';
+  if(g.over){
+    h+='<div class="phase-msg">Game over</div><div class="phase-sub">'+esc(g.reason||'')+'</div>';
+  }else{
+    h+='<div class="phase-msg">'+(g.active===me?'Your turn':esc(g.players[g.active].name)+"'s turn")
+      +(g.check?' — check!':'')+'</div>';
+    h+='<div class="phase-sub">'+(chessPromo?'Promote to…'
+      :myTurn?(chessSel?'Now pick where it goes.':'Tap a piece to see where it can go.')
+      :'Waiting…')+'</div>';
+  }
+  if(g.log&&g.log.length)
+    h+='<div class="movelog">'+g.log.slice(-3).map(esc).join(' &nbsp;·&nbsp; ')+'</div>';
+  h+='</div>';
+
+  if(chessPromo){
+    h+='<div class="cpromo">'+['Q','R','B','N'].map(p=>
+      '<button onclick="chessPromote(\''+p.toLowerCase()+'\')" title="Promote to '+p+'">'
+      +chessPieceHtml((seat===0?'w':'b')+p)+'</button>').join('')+'</div>';
+  }
+
+  const dests=chessSel?(legal[chessSel]||[]):[];
+  const last=g.last||null;
+  // Where the king in check is standing, so the highlight has somewhere to go.
+  let checkSq=null;
+  if(g.check&&!g.over){
+    const turn=g.active===0?'w':'b';
+    for(let r=0;r<8;r++)for(let f=0;f<8;f++)
+      if(g.board[r][f]===turn+'K')checkSq=C_FILES[f]+(8-r);
+  }
+
+  h+='<div class="cwrap"><div class="cboard-box"><div class="cboard">';
+  for(let i=0;i<8;i++){
+    const r=flip?7-i:i;                       // board[0] is rank 8
+    for(let j=0;j<8;j++){
+      const f=flip?7-j:j;
+      const sq=C_FILES[f]+(8-r);
+      const pc=g.board[r][f];
+      const cls=['csq'];
+      if((r+f)%2)cls.push('dark');
+      if(sq===chessSel)cls.push('sel');
+      if(dests.indexOf(sq)>=0){cls.push('dest');if(pc)cls.push('occupied');}
+      if(last&&(sq===last.from||sq===last.to))cls.push('last');
+      if(sq===checkSq)cls.push('check');
+      // Tappable if it is a piece that can move, or somewhere the lifted
+      // piece may go. Everything else is scenery.
+      const tappable=myTurn&&!chessPromo&&(legal[sq]||dests.indexOf(sq)>=0);
+      if(tappable)cls.push('pickable');
+      h+='<div class="'+cls.join(' ')+'"'
+        +(tappable?' onclick="chessTap(\''+sq+'\')"':'')
+        +' title="'+sq+'">';
+      if(pc)h+=chessPieceHtml(pc);
+      // Coordinates on the outer edges only, the way a printed board has them.
+      if(j===0)h+='<span class="co r">'+(8-r)+'</span>';
+      if(i===7)h+='<span class="co f">'+C_FILES[f]+'</span>';
+      h+='</div>';
+    }
+  }
+  h+='</div></div>';
+
+  // ---- the side: who is who, what has been taken, and the moves so far ----
+  const taken=chessTaken(g);
+  // One side's line: their name, the pieces they have taken, and their lead.
+  const line=who=>{
+    const i=who==='white'?0:1;
+    const p=g.players[i];
+    const list=who==='white'?taken.byWhite:taken.byBlack;
+    const edge=who==='white'?taken.edgeWhite:taken.edgeBlack;
+    return '<div><span class="lbl">'+(p.kind==='ai'?'🤖 ':'')+esc(p.name)
+      +(i===me?' (you)':'')+' · '+who+'</span></div>'
+      +'<div class="ctaken">'
+      +(list.length?list.map(k=>chessPieceHtml((who==='white'?'b':'w')+k)).join('')
+        :'<span class="cempty">nothing taken</span>')
+      +(edge>0?'<span class="adv">+'+edge+'</span>':'')+'</div>';
+  };
+  // Whoever is at the far end of the board goes above the move list.
+  h+='<div class="cside">';
+  h+=line(flip?'white':'black');
+
+  const hist=g.history||[];
+  if(hist.length){
+    h+='<div class="cmoves"><table>';
+    for(let i=0;i<hist.length;i+=2){
+      const isNow=i+2>=hist.length;
+      h+='<tr'+(isNow?' class="now"':'')+'><td class="n">'+(i/2+1)+'.</td>'
+        +'<td class="m">'+esc(hist[i])+'</td>'
+        +'<td class="m">'+esc(hist[i+1]||'')+'</td></tr>';
+    }
+    h+='</table></div>';
+  }else{
+    h+='<div class="cmoves"><span class="cempty">No moves yet.</span></div>';
+  }
+
+  h+=line(flip?'black':'white');
+
+  if(me>=0&&!g.over)
+    h+='<button class="small-btn alt" onclick="chessResign()">Resign</button>';
+  h+='</div></div>';
+
+  h+=chessLearnHtml(g,me);
+  body.innerHTML=h;
+
+  if(g.over&&endShownFor!==room.id+g.reason){
+    endShownFor=room.id+g.reason;
+    const sc=g.players.map(p=>p.score);
+    const drawn=sc[0]===sc[1];
+    const win=sc[0]>sc[1]?0:1;
+    const won=me>=0?win===me:null;
+    const nm=i=>(g.players[i].kind==='ai'?'🤖 ':'')+esc(g.players[i].name);
+    $('endTitle').innerHTML=(g.reason&&g.reason.indexOf(' left ')>=0)?'🏁 Game ended early'
+      :drawn?'½–½ Draw'
+      :(won===null?'🏆 '+nm(win)+' wins!':(won?'🏆 You win!':'😞 You lose'));
+    $('endReason').textContent=g.reason||'';
+    $('endScores').innerHTML=drawn
+      ? g.players.map((p,i)=>'<div><span>'+nm(i)+'</span><b>½</b></div>').join('')
+      : '<div><span><b>'+nm(win)+'</b></span><b>1</b></div>'
+        +'<div><span>'+nm(1-win)+'</span><b>0</b></div>';
+    $('rematchBtn').style.display=isHost()?'':'none';
+    $('endOverlay').classList.add('show');
+  }
+}
+
+/* What the bot across the table knows about you. The server sends this with
+   the position, so it costs nothing to show, and it is the whole point of
+   this particular opponent: it is keeping a book on you. */
+function chessLearnHtml(g,me){
+  const ai=g.ai||{},learned=g.learned||{};
+  const seats=Object.keys(ai);
+  if(!seats.length)return '';
+  let h='';
+  for(const s of seats){
+    const a=ai[s];if(!a)continue;
+    const r=a.record||{};
+    h+='<div class="clearn"><h4>🤖 '+esc(a.name)+' — how it is learning</h4>';
+    h+='<div><span>Games against everyone</span><b>'+(r.played||0)+' · '
+      +(r.won||0)+'W '+(r.lost||0)+'L '+(r.drawn||0)+'D</b></div>';
+    h+='<div><span>Thinking depth</span><b>'+(a.searchDepth||0)+' of '+(a.maxDepth||0)+'</b></div>';
+    h+='<div><span>Opening book</span><b>'+(a.bookPositions||0)+' positions · '
+      +(a.bookMoves||0)+' moves</b></div>';
+    if(a.vsOpponent){
+      const v=a.vsOpponent;
+      h+='<div><span>Against you</span><b>'+(v.played||0)+' · '
+        +(v.won||0)+'W '+(v.lost||0)+'L '+(v.drawn||0)+'D</b></div>';
+    }
+    if(a.favouriteOpening)
+      h+='<div><span>Your usual opening</span><b>'+esc(a.favouriteOpening)+'</b></div>';
+    const l=learned[s];
+    if(l){
+      h+='<span class="note">Last game: a '+esc(l.result||'')+' for it. '
+        +'It updated '+(l.book_updated||0)+' book '
+        +((l.book_updated===1)?'position':'positions')
+        +' and moved '+(l.weights_moved||0)+' of its evaluation weights'
+        +(l.depth_next_game?'; next game it thinks '+l.depth_next_game+' deep':'')+'.</span>';
+    }
+    h+='</div>';
+  }
+  return h;
 }
 
 /* ---------- Euchre ---------- */
