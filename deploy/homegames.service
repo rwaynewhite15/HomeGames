@@ -1,0 +1,39 @@
+[Unit]
+Description=HomeGames LAN game lobby
+Documentation=https://github.com/rwaynewhite15/HomeGames
+# network-online rather than plain network: the server binds to the LAN
+# address at startup and reports it in the banner.
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__REPO__
+# The virtualenv, not the system python. Raspberry Pi OS (Bookworm and later)
+# marks the system interpreter externally-managed under PEP 668, so
+# `pip install chess` against it fails outright. install.sh builds the venv.
+ExecStart=__REPO__/.venv/bin/python __REPO__/homegames_server.py
+
+# Restart on crash. You asked for deploy-triggered restarts rather than this,
+# and this is not that — it only fires if the process dies unexpectedly. The
+# alternative is the lobby staying down until somebody notices, so it is one
+# line well spent. Delete these two if you would rather it stay dead.
+Restart=on-failure
+RestartSec=5
+
+# stdout is the banner and the game log; journalctl -u homegames -f reads it.
+StandardOutput=journal
+StandardError=journal
+
+# Modest hardening. The server only ever writes stats.json, ai_profiles.json
+# and chess_brains/, all inside the repo.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=__REPO__
+
+[Install]
+WantedBy=multi-user.target

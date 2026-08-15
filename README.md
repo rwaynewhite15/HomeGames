@@ -54,6 +54,49 @@ The console prints two addresses:
 > If other devices can't connect, allow Python through Windows Firewall
 > (private networks) when prompted, or open TCP port 4001.
 
+## Running it on the Pi
+
+`deploy/install.sh` sets the Pi up to run HomeGames as a service and to pick up
+new code from `main` by itself. Run it from the repo, as the user who should own
+the server — not as root:
+
+```
+cd ~/HomeGames && ./deploy/install.sh
+```
+
+That installs:
+
+- **`homegames.service`** — the server, started at boot, restarted if it
+  crashes. It runs out of a virtualenv at `.venv/`, because Raspberry Pi OS
+  (Bookworm and later) marks the system interpreter externally-managed under
+  PEP 668 and `pip install chess` against it fails outright.
+- **`homegames-deploy.timer`** — every two minutes, fetches `main`; if there is
+  a new commit it fast-forwards, reinstalls dependencies *if `requirements.txt`
+  changed*, and restarts the server. Polling rather than a webhook on purpose:
+  a webhook means opening a port through your router to the internet, which is
+  a much bigger thing to own than a `git fetch`.
+- a sudoers rule letting that one user run exactly one command,
+  `systemctl restart homegames.service`.
+
+**Deploys wait for your game to finish.** The server keeps `CLIENTS` and
+`ROOMS` in memory only — `stats.json`, `ai_profiles.json` and `chess_brains/`
+are written as games *finish*, so results and AI learning survive a restart,
+but any game still in progress does not. So the deploy asks `/api/health` first
+and steps aside while `playing` is non-zero, for up to about half an hour
+(15 ticks) before going ahead regardless, so one abandoned room cannot block
+deploys forever.
+
+It also refuses to pull over uncommitted changes in the Pi's working tree, and
+refuses anything that will not fast-forward — both are cases where a human
+should look rather than an unattended script guessing.
+
+```
+sudo systemctl status homegames      # is it up?
+journalctl -u homegames -f           # the server's own log
+journalctl -u homegames-deploy -f    # what the deploys have been doing
+./deploy/deploy.sh                   # deploy right now, don't wait for the timer
+```
+
 ## How it works
 
 - `homegames_server.py` — server: HTTP + Server-Sent Events lobby, rooms

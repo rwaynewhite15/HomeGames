@@ -2614,6 +2614,19 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header('Cache-Control', 'no-store')
             self.end_headers()
             self.wfile.write(body)
+        elif u.path == '/api/health':
+            # Read-only liveness, used by deploy/deploy.sh to decide whether
+            # restarting right now would land on top of somebody's game.
+            # Rooms and clients live only in memory, so a restart drops every
+            # game in progress; `playing` is what tells the deploy to wait.
+            with LOCK:
+                body = {'ok': True,
+                        'players': sum(1 for c in CLIENTS.values() if c['queues']),
+                        'rooms': len(ROOMS),
+                        'playing': sum(1 for r in ROOMS.values()
+                                       if r['status'] == 'playing'),
+                        'chess': CHESS_OK}
+            self.send_json(body)
         elif u.path == '/api/events':
             self.handle_sse(u)
         elif u.path == '/favicon.ico':

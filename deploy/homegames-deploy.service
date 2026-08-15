@@ -1,0 +1,27 @@
+[Unit]
+Description=Check for new HomeGames code and deploy it
+Documentation=https://github.com/rwaynewhite15/HomeGames
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=__USER__
+Group=__GROUP__
+WorkingDirectory=__REPO__
+Environment=HOMEGAMES_REPO=__REPO__
+Environment=HOMEGAMES_BRANCH=__BRANCH__
+Environment=HOMEGAMES_SERVICE=homegames.service
+ExecStart=__REPO__/deploy/deploy.sh
+
+# Runs as the repo's owner, not root: git writing into a root-owned .git would
+# break every later `git` the human runs on the Pi. The one privileged thing it
+# needs — restarting the unit — comes from a single-command sudoers rule that
+# install.sh writes.
+NoNewPrivileges=false
+
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

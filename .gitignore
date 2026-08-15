@@ -12,3 +12,4 @@ chess_brains/
 chess_ai.json
 chess_ai_demo.json
 *.tmp
+.venv/

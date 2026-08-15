@@ -1,0 +1,17 @@
+[Unit]
+Description=Poll for new HomeGames code every couple of minutes
+Documentation=https://github.com/rwaynewhite15/HomeGames
+
+[Timer]
+# Polling rather than a webhook, deliberately: a webhook would mean opening a
+# port through the home router to the internet, which is a much larger thing to
+# own than a git fetch every two minutes. A fetch with nothing new costs one
+# round trip and exits.
+OnBootSec=2min
+OnUnitActiveSec=2min
+# Keeps several Pis (or a Pi and a laptop) from fetching in lockstep.
+RandomizedDelaySec=30
+Unit=homegames-deploy.service
+
+[Install]
+WantedBy=timers.target
