@@ -1289,6 +1289,320 @@ class Euchre:
         }
 
 
+# ============================================================
+#  Chess engine (2 seats, seat 0 plays White)
+# ============================================================
+# python-chess is the first dependency this project has ever taken. It is pure
+# Python — a py3-none-any wheel, so `pip install chess` needs no compiler on
+# the Pi — and it brings correct legal move generation, castling rights, en
+# passant, threefold repetition and insufficient-material draws. Those are
+# exactly the rules homegrown engines get quietly wrong, and none of them are
+# the interesting part of a learning opponent.
+#
+# The import is guarded so a machine that has not installed it still runs
+# Quixx, Mancala and Euchre exactly as before: chess just does not appear in
+# the lobby, and start_server() says why on the way up.
+try:
+    import chess as chesslib
+    from chess_ai import ChessAI
+    CHESS_OK = True
+    CHESS_WHY = None
+except ImportError as _chess_err:            # pragma: no cover - environment
+    chesslib = None
+    ChessAI = None
+    CHESS_OK = False
+    CHESS_WHY = str(_chess_err)
+
+# One brain file per bot, so each keeps its own opening book and its own
+# evaluation weights. A directory rather than one shared file because the
+# brains are per-bot and independent; back up the folder and you have them all.
+CHESS_BRAIN_DIR = os.path.join(BASE, 'chess_brains')
+
+
+def chess_brain_path(pid):
+    safe = ''.join(c for c in str(pid or 'default') if c.isalnum() or c in '-_')
+    return os.path.join(CHESS_BRAIN_DIR, (safe or 'default') + '.json')
+
+
+class Chess:
+    """Standard chess, server-authoritative.
+
+    Two seats: seat 0 plays White, seat 1 plays Black. room_seats() puts humans
+    before bots, so a solo player is always White against the AI — which is the
+    arrangement the lobby offers. Two humans work equally well.
+
+    The learning lives in ChessAI (chess_ai.py); this class only decides when
+    to ask it for a move and when to hand it a finished game. Keeping those two
+    phases apart is what stops a half-played or abandoned game from training
+    anything.
+    """
+
+    # Seconds the AI may think per move. The whole request runs under the
+    # global LOCK — as Mancala's alpha-beta already does — so this is also how
+    # long one move blocks other clients. Modest on purpose; the AI's search is
+    # time-budgeted, so it simply reaches a shallower depth on slower hardware
+    # rather than overrunning.
+    THINK_TIME = 0.6
+
+    def __init__(self, variant, seats):
+        self.variant = variant
+        self.players = [{'cid': s['id'], 'name': s['name'],
+                         'kind': s.get('kind', 'human'),
+                         'profile': s.get('profile'),
+                         'blunder': (0.0 if s.get('reference')
+                                     else float(s.get('blunder') or 0.0))}
+                        for s in seats[:2]]
+        self.board = chesslib.Board()
+        self.over = False
+        self.end_reason = None
+        self.forfeit_idx = None
+        self.scores = [0.5 for _ in self.players]
+        self.last = None
+        self.log = []
+        self.sans = []
+        self.taught = False
+        self.reports = {}
+
+        try:
+            os.makedirs(CHESS_BRAIN_DIR, exist_ok=True)
+        except OSError:
+            pass
+
+        # One ChessAI per bot seat, loaded from that bot's own brain file.
+        self.ai = {}
+        for i, p in enumerate(self.players):
+            if p['kind'] != 'ai':
+                continue
+            other = self.players[1 - i]['name'] if len(self.players) > 1 else 'human'
+            self.ai[i] = ChessAI(name=p['name'],
+                                 data_path=chess_brain_path(p['profile']),
+                                 opponent=other, think_time=self.THINK_TIME,
+                                 max_depth=self.depth_ceiling(p['blunder']))
+
+    @staticmethod
+    def depth_ceiling(blunder):
+        """A bot's personal strength ceiling, from the handicap it was born
+        with — the same idea as Mancala's depth_for(). The ChessAI's own
+        skill_level() ramps up to this as it plays, so a new bot starts shallow
+        and grows into whatever its handicap allows rather than arriving at
+        full strength on game one."""
+        return max(2, min(4, int(round(4.5 - 6.0 * blunder))))
+
+    # ---- helpers ----
+    @property
+    def active(self):
+        """Derived from the board rather than tracked alongside it, so the two
+        cannot drift apart."""
+        return 0 if self.board.turn == chesslib.WHITE else 1
+
+    def pidx(self, cid):
+        for i, p in enumerate(self.players):
+            if p['cid'] == cid:
+                return i
+        return None
+
+    def note(self, text):
+        self.log.append(text)
+        del self.log[:-8]
+
+    # ---- actions ----
+    def apply(self, cid, body):
+        kind = str(body.get('type') or '')
+        if kind == 'move':
+            return self.move(cid, body.get('uci') or body.get('move'))
+        if kind == 'resign':
+            return self.resign(cid)
+        return 'Unknown action.'
+
+    def move(self, cid, uci):
+        p = self.pidx(cid)
+        if self.over:
+            return 'The game is over.'
+        if p is None or p != self.active:
+            return "It's not your turn."
+        if not uci:
+            return 'No move given.'
+        text = str(uci).strip()
+
+        try:
+            mv = chesslib.Move.from_uci(text)
+        except ValueError:
+            try:
+                mv = self.board.parse_san(text)     # a UI may find SAN easier
+            except ValueError:
+                return 'Not a move: %s' % text[:20]
+
+        if mv not in self.board.legal_moves:
+            # A promotion sent without naming the piece is the common case, and
+            # a queen is what the player almost always meant.
+            promo = chesslib.Move(mv.from_square, mv.to_square,
+                                  promotion=chesslib.QUEEN)
+            if promo in self.board.legal_moves:
+                mv = promo
+            else:
+                return 'Illegal move.'
+        self.push(mv, p)
+
+    def resign(self, cid):
+        p = self.pidx(cid)
+        if self.over:
+            return 'The game is over.'
+        if p is None:
+            return 'You are not playing.'
+        self.over = True
+        self.scores = [0.0 if i == p else 1.0 for i in range(len(self.players))]
+        self.end_reason = ('%s resigned — %s wins.'
+                           % (self.players[p]['name'], self.players[1 - p]['name']))
+        self.note(self.end_reason)
+        self.teach()
+
+    def push(self, mv, p):
+        san = self.board.san(mv)                    # must be read before the push
+        self.board.push(mv)
+        self.sans.append(san)
+        checking = self.board.is_check()
+        self.last = {'player': p, 'uci': mv.uci(), 'san': san,
+                     'from': chesslib.square_name(mv.from_square),
+                     'to': chesslib.square_name(mv.to_square),
+                     'check': checking}
+        self.note('%s played %s' % (self.players[p]['name'], san))
+        if self.board.is_game_over(claim_draw=True):
+            self.finish()
+
+    def finish(self):
+        self.over = True
+        outcome = self.board.outcome(claim_draw=True)
+        if outcome is None:
+            self.end_reason = 'The game ended.'
+        elif outcome.winner is None:
+            self.end_reason = ('Draw — %s.'
+                               % outcome.termination.name.replace('_', ' ').lower())
+        else:
+            w = 0 if outcome.winner == chesslib.WHITE else 1
+            self.scores = [1.0 if i == w else 0.0 for i in range(len(self.players))]
+            self.end_reason = ('%s wins by %s.'
+                               % (self.players[w]['name'],
+                                  outcome.termination.name.replace('_', ' ').lower()))
+        self.teach()
+
+    def forfeit(self, quitter_cid):
+        p = self.pidx(quitter_cid)
+        self.over = True
+        self.forfeit_idx = p
+        who = self.players[p]['name'] if p is not None else '?'
+        if p is not None:
+            self.scores = [0.0 if i == p else 1.0 for i in range(len(self.players))]
+            self.end_reason = ('%s left — %s wins by forfeit.'
+                               % (who, self.players[1 - p]['name']))
+        else:
+            self.end_reason = '%s left — the game ended early.' % who
+        # A walkout says nothing about the moves that preceded it, so the game
+        # counts in the record but teaches the AI nothing.
+        self.teach(learn=False)
+
+    def teach(self, learn=True):
+        """Hand the finished game to each AI seat, then persist what changed.
+
+        Runs exactly once — finish(), resign() and forfeit() can all reach it,
+        and a game must not be learned from twice.
+        """
+        if self.taught:
+            return
+        self.taught = True
+        for i, ai in self.ai.items():
+            try:
+                if not learn:
+                    ai.new_game()          # drop the trace: nothing to credit
+                self.reports[i] = ai.learn_from_game(
+                    self.scores[i], final_board=self.board,
+                    opponent=self.players[1 - i]['name'])
+                ai.save_progress()
+            except Exception as e:         # never let learning break a game
+                print('  [chess] %s could not learn: %s'
+                      % (self.players[i]['name'], e))
+
+    # ---- AI ----
+    def bot_step(self):
+        if self.over:
+            return False
+        p = self.active
+        if self.players[p]['kind'] != 'ai':
+            return False
+        legal = list(self.board.legal_moves)
+        if not legal:
+            self.finish()
+            return False
+
+        mv = None
+        blunder = self.players[p]['blunder']
+        if blunder and random.random() < blunder:
+            # The handicap it was born with. Note this deliberately bypasses
+            # the ChessAI, so a move it did not choose never lands in its book.
+            mv = random.choice(legal)
+        elif self.ai.get(p):
+            uci = self.ai[p].get_move(self.board)
+            if uci:
+                try:
+                    cand = chesslib.Move.from_uci(uci)
+                    if cand in legal:
+                        mv = cand
+                except ValueError:
+                    mv = None
+        self.push(mv or random.choice(legal), p)
+        return True
+
+    # ---- payloads ----
+    def rows(self):
+        """The board as eight rows of eight, rank 8 first, each cell None or
+        a two-character code like 'wQ' — straightforward to render."""
+        out = []
+        for rank in range(7, -1, -1):
+            row = []
+            for f in range(8):
+                pc = self.board.piece_at(chesslib.square(f, rank))
+                row.append(None if pc is None else
+                           ('w' if pc.color == chesslib.WHITE else 'b')
+                           + pc.symbol().upper())
+            out.append(row)
+        return out
+
+    def result_summary(self):
+        return {
+            'game': 'chess', 'variant': self.variant, 'reason': self.end_reason,
+            'players': [{'name': p['name'], 'score': self.scores[i], 'penalties': 0,
+                         'kind': p['kind'], 'profile': p['profile'],
+                         'forfeited': i == self.forfeit_idx}
+                        for i, p in enumerate(self.players)],
+        }
+
+    def to_dict(self, viewer=None):
+        # Chess is perfect information, so every viewer sees the same thing.
+        legal = {}
+        if not self.over:
+            for m in self.board.legal_moves:
+                legal.setdefault(chesslib.square_name(m.from_square),
+                                 []).append(chesslib.square_name(m.to_square))
+        return {
+            'kind': 'chess', 'variant': self.variant,
+            'fen': self.board.fen(), 'board': self.rows(),
+            'players': [{'cid': p['cid'], 'name': p['name'], 'kind': p['kind'],
+                         'profile': p['profile'],
+                         'colour': 'white' if i == 0 else 'black',
+                         'score': self.scores[i]}
+                        for i, p in enumerate(self.players)],
+            'active': self.active, 'over': self.over, 'reason': self.end_reason,
+            'last': self.last, 'log': self.log[-5:],
+            'check': self.board.is_check(),
+            'moveNo': self.board.fullmove_number,
+            'history': list(self.sans),
+            'legal': legal,
+            # What the AI knows and what the last game taught it — enough for a
+            # "how is it learning?" panel without another round trip.
+            'ai': {str(i): a.stats() for i, a in self.ai.items()},
+            'learned': {str(i): r for i, r in self.reports.items()},
+        }
+
+
 GAMES = {
     'quixx': {'title': 'Quixx', 'min': 2, 'max': MAX_SEATS, 'engine': Quixx,
               'icon': '🎲', 'variants': VARIANTS,
@@ -1309,6 +1623,17 @@ GAMES = {
                         'trump and take three tricks — or get euchred. '
                         'First to 10. 4 players.'},
 }
+
+# Chess only appears if python-chess is installed. Registering it conditionally
+# rather than always is what keeps the dependency optional: without it the
+# lobby is exactly what it was before.
+if CHESS_OK:
+    GAMES['chess'] = {
+        'title': 'Chess', 'min': 2, 'max': 2, 'engine': Chess,
+        'icon': '♟️', 'variants': {'standard'},
+        'vnames': {'standard': 'Standard'},
+        'blurb': 'The old one. Play White against an AI that keeps a book on '
+                 'you and gets harder the more you play it. 2 players.'}
 
 # ============================================================
 #  Stats backend — persisted to stats.json
@@ -1615,9 +1940,17 @@ def blank_brain(game, weights=None):
 
 
 def brain(pid, game):
-    """A profile's brain for one game, created on first use."""
+    """A profile's brain for one game, created on first use.
+
+    A game with no entry in BRAINS has no weights for the trainer to tune and
+    returns None — chess is the case in point. Its bots learn through their own
+    ChessAI brain files instead, because the screening the trainer does here
+    (120 games, then 160 to confirm) is minutes per game at chess speeds rather
+    than milliseconds, and a chess bot that only learned by self-play would
+    never notice the person it is actually playing.
+    """
     p = PROFILES['profiles'].get(pid)
-    if not p:
+    if not p or game not in BRAINS:
         return None
     return p.setdefault('brains', {}).setdefault(game, blank_brain(game))
 
@@ -2414,6 +2747,44 @@ class Handler(BaseHTTPRequestHandler):
             self.send_json({'ok': True, 'player': d})
             return
 
+        # POST /api/chess/stats            -> every bot's chess brain
+        # POST /api/chess/reset {profile}  -> wipe one bot's brain, or all of
+        #                                     them if no profile is named
+        if cmd == 'chess':
+            if not CHESS_OK:
+                self.err('Chess is unavailable: %s. Run "pip install chess".'
+                         % CHESS_WHY, 501)
+                return
+            sub = parts[1] if len(parts) > 1 else 'stats'
+
+            if sub == 'stats':
+                out = []
+                for p in roster():
+                    ai = ChessAI(name=p['name'],
+                                 data_path=chess_brain_path(p['id']),
+                                 max_depth=Chess.depth_ceiling(p['blunder']))
+                    out.append({'profile': p['id'], 'name': p['name'],
+                                'stats': ai.stats()})
+                self.send_json({'ok': True, 'bots': out})
+                return
+
+            if sub == 'reset':
+                pid = body.get('profile')
+                targets = [p for p in roster() if not pid or p['id'] == pid]
+                if not targets:
+                    self.err('Unknown AI player.', 404)
+                    return
+                for p in targets:
+                    ChessAI(name=p['name'],
+                            data_path=chess_brain_path(p['id']),
+                            max_depth=Chess.depth_ceiling(p['blunder'])).reset()
+                self.send_json({'ok': True,
+                                'reset': [p['name'] for p in targets]})
+                return
+
+            self.err('Unknown chess action.', 404)
+            return
+
         if cmd == 'train':
             if body.get('stop'):
                 TRAINING['running'] = False
@@ -2712,6 +3083,13 @@ def main():
     print('  AI roster:   %s' % ', '.join(p['name'] for p in roster()))
     if fresh:
         print('               (new — playing calibration games to rate them)')
+    if CHESS_OK:
+        print('  Chess:       on — brains in %s/'
+              % os.path.basename(CHESS_BRAIN_DIR))
+    else:
+        # Said plainly rather than left to a missing lobby tile, since "where
+        # did chess go" is otherwise a puzzle with no clue attached.
+        print('  Chess:       off — needs python-chess ("pip install chess")')
     print('  Bulk-train with:  python homegames_server.py --train 30')
     print('  Press Ctrl+C to stop.')
     print()

@@ -20,6 +20,11 @@ Games so far:
   scoring to ten. The first game here with hidden information: hands are dealt
   server-side and each client is sent only its own cards, so opponents and
   spectators genuinely cannot see them.
+- **Chess** — 2 players. Seat 0 plays White, so a solo player is White against
+  the AI. The only game needing an install (`pip install chess`), and the only
+  one whose bots learn while you play them rather than only in training: each
+  keeps an opening book on the person it is facing. See
+  [How the AI learn](#how-the-ai-learn).
 
 Each game keeps its own leaderboard and ELO, so a bot can be strong at one and
 weak at another. Euchre is scored as a partnership — both halves of a winning
@@ -27,7 +32,13 @@ pair are credited with the win, and ratings move against the other side.
 
 ## Requirements
 
-- Python 3.7+ (standard library only — nothing to install)
+- Python 3.7+ — Quixx, Mancala and Euchre need the standard library and
+  nothing else.
+- Chess additionally needs [python-chess](https://python-chess.readthedocs.io):
+  `pip install -r requirements.txt`. It is pure Python, so it installs on the
+  Pi without a compiler. Skip it and everything else still works — the server
+  starts normally, chess just does not appear in the lobby and the banner
+  says why.
 
 ## Run it
 
@@ -56,6 +67,10 @@ The console prints two addresses:
   by the server after every finished game.
 - `ai_profiles.json` — the AI roster: each bot's name, handicaps, learned
   weights and training history.
+- `chess_ai.py` — the learning chess opponent. Standalone: it imports nothing
+  from the server and runs on its own for testing or a terminal game.
+- `chess_brains/` — one JSON brain per bot: its opening book, evaluation
+  weights, record and what it has noticed about each person it plays.
 
 ## Players and AI
 
@@ -114,6 +129,44 @@ A sanity check worth repeating after heavy training — do the ratings still
 predict who wins? On a 5-bot roster, 400 games per pair, the higher-rated bot
 won 10 of 10 pairings. Gaps under ~50 points are inside the noise and will
 sometimes invert.
+
+### Chess learns differently
+
+The trainer above does not tune chess. A screening round is 120 games and then
+160 to confirm, which is milliseconds a game at Quixx and minutes a game at
+chess — and a bot trained only against itself would never notice the person it
+is actually playing. So chess bots learn *from your games instead*, in
+`chess_ai.py`, on three clocks:
+
+1. **The opening book** — pays off within a handful of games. Early positions
+   repeat, you have a few pet openings, and the book records how each reply
+   actually turned out against *you*. Move choice is UCB1 rather than
+   epsilon-greedy, because with thirty games of data you want exploration
+   spent on the moves it is uncertain about, not a fixed share of turns thrown
+   at moves already known to be bad.
+2. **Move-level credit** — pays off over tens of games. Each of the AI's moves
+   is scored by what the position did two plies later, so one game is ~40
+   training signals rather than the single bit a win/loss gives you.
+3. **Evaluation weights** — pays off over hundreds. The piece values and
+   positional terms are tuned by TD(0) on that signal. Ten human games move
+   them by a rounding error; that is honest rather than disappointing, and it
+   is what `self_play()` is for.
+
+So the strength you feel across your first dozen games is mostly search depth
+(which ramps from 2 up to each bot's ceiling) and the book. Each bot's
+`blunder` handicap still applies and still caps its ceiling, exactly as it does
+elsewhere — a bot that throws away a fifth of its moves is beatable no matter
+how good its book gets.
+
+Brains live one file per bot in `chess_brains/`. Back up the folder, or reset
+one (or all) from `POST /api/chess/reset`. `chess_ai.py` also runs standalone:
+
+```
+python chess_ai.py --test          # self-test
+python chess_ai.py --play          # play it at the terminal
+python chess_ai.py --selfplay 200  # bootstrap the evaluation weights
+python chess_ai.py --stats         # what it has learned so far
+```
 
 ## Stats & ELO
 

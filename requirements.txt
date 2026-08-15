@@ -1,0 +1,10 @@
+# Everything except chess runs on the standard library alone — this file is
+# only needed if you want the Chess table.
+#
+# python-chess is pure Python (a py3-none-any wheel), so this installs on the
+# Pi without a compiler and without pulling in a toolchain. If it is missing,
+# the server still starts and Quixx, Mancala and Euchre work exactly as before;
+# chess simply does not appear in the lobby and the startup banner says so.
+#
+#   pip install -r requirements.txt
+chess>=1.10

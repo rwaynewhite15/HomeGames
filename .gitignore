@@ -8,4 +8,7 @@ Thumbs.db
 # Tracking these meant every machine's play collided on the same two files.
 stats.json
 ai_profiles.json
+chess_brains/
+chess_ai.json
+chess_ai_demo.json
 *.tmp
