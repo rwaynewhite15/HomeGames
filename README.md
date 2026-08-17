@@ -161,8 +161,20 @@ people actually played.
 Train them from the lobby's **The AI** panel, or in bulk from the shell:
 
 ```
-python homegames_server.py --train 30
+python homegames_server.py --train 30            # quixx
+python homegames_server.py --train 30 mancala
+python homegames_server.py --train 20 chess      # a different mechanism, see below
 ```
+
+Chess trains from the same button but not by the same method. The hill-climbing
+trainer screens on 120 games and confirms on 160, which is milliseconds a game
+at Quixx and minutes a game at chess, so chess bots train through their own
+ChessAI instead: searchers self-play to tune their evaluation, learners spar
+against the sharpest searcher on the roster. Rounds are shorter as a result —
+20 games a bot — and rated games between chess bots run alongside so the ELOs
+keep moving. A bot that is sitting in a live game is skipped for that round,
+because training and a finished game both write the same brain file and the
+loser of that race would lose its learning.
 
 `ai_profiles.json` holds each bot's brain, the brain it was born with, its
 generation count and its win rate against that original self. Delete it to

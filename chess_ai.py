@@ -643,6 +643,14 @@ class ChessAI:
         }
         tmp = self.data_path + '.tmp'
         try:
+            # The directory is made here rather than by the caller. It used to
+            # be created only when a game engine was built, so the trainer —
+            # which makes a ChessAI directly and never builds an engine — wrote
+            # into a folder that did not exist yet and lost the first bot's
+            # round to a logged-and-ignored error.
+            parent = os.path.dirname(self.data_path)
+            if parent:
+                os.makedirs(parent, exist_ok=True)
             with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(data, f, indent=2)
             os.replace(tmp, self.data_path)

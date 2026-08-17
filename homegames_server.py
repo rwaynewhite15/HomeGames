@@ -1352,7 +1352,13 @@ class Chess:
                          'profile': s.get('profile'),
                          'blunder': (0.0 if s.get('reference')
                                      else float(s.get('blunder') or 0.0)),
-                         'style': s.get('style') or 'searcher'}
+                         'style': s.get('style') or 'searcher',
+                         # Per-seat rather than a class attribute the trainer
+                         # could reach in and change: training runs on its own
+                         # thread while people are playing, and a global would
+                         # make everyone else's opponent think faster or slower
+                         # for the duration.
+                         'think': float(s.get('think') or self.THINK_TIME)}
                         for s in seats[:2]]
         self.board = chesslib.Board()
         self.over = False
@@ -1378,7 +1384,7 @@ class Chess:
             other = self.players[1 - i]['name'] if len(self.players) > 1 else 'human'
             self.ai[i] = ChessAI(name=p['name'],
                                  data_path=chess_brain_path(p['profile']),
-                                 opponent=other, think_time=self.THINK_TIME,
+                                 opponent=other, think_time=p['think'],
                                  max_depth=self.depth_ceiling(p['blunder']),
                                  style=p['style'])
 
@@ -2335,9 +2341,149 @@ def calibrate(games=90, game='quixx'):
         broadcast_stats()
 
 
+# ---- chess training -------------------------------------------------------
+# Chess is not in BRAINS, so the hill-climbing trainer above cannot touch it:
+# one screening round there is 120 games and then 160 to confirm, which is
+# milliseconds a game at Quixx and minutes a game here. Chess bots learn
+# through their own ChessAI instead, and this drives that from the same button.
+#
+# A round trains one bot, cycling the roster, exactly as run_training does, and
+# reports through the same TRAINING dict so the panel needs no changes.
+CHESS_TRAIN_GAMES = 20      # games a bot gets per round
+CHESS_TRAIN_THINK = 0.04    # seconds per move while training, not the 0.6 of a real game
+
+
+def chess_bot_busy(pid):
+    """Is this bot sitting in a live game right now?
+
+    Training writes the bot's brain file, and so does a finished game. If both
+    happen for the same bot the later write wins and the other's learning is
+    gone, so the trainer steps over anyone currently playing.
+    """
+    with LOCK:                      # the trainer is a thread; rooms move under it
+        for r in list(ROOMS.values()):
+            if r.get('game') != 'chess' or r.get('status') != 'playing':
+                continue
+            for b in r.get('bots') or []:
+                if b.get('profile') == pid:
+                    return True
+    return False
+
+
+def chess_teacher_profile(exclude=None):
+    """The sharpest searcher on the roster — the one worth learning from."""
+    with LOCK:
+        pool = [dict(p) for p in roster()
+                if p.get('style', 'searcher') != 'learner' and p['id'] != exclude]
+    return min(pool, key=lambda p: p.get('blunder', 1.0)) if pool else None
+
+
+def chess_train_round(pid):
+    """One bot's turn. Returns (log line, games played)."""
+    with LOCK:
+        p = PROFILES['profiles'].get(pid)
+        p = dict(p) if p else None      # snapshot; the rest runs unlocked
+    if not p:
+        return None, 0
+    if chess_bot_busy(pid):
+        return '%s is in a game — skipped this round' % p['name'], 0
+
+    style = p.get('style', 'searcher')
+    ai = ChessAI(name=p['name'], data_path=chess_brain_path(pid), style=style,
+                 think_time=CHESS_TRAIN_THINK,
+                 max_depth=Chess.depth_ceiling(p['blunder']))
+
+    if style == 'learner':
+        # A learner has to spar with something that punishes blunders; against
+        # another blind bot the signal that hanging a piece is bad is about a
+        # third as strong, and it can end up learning the opposite.
+        tp = chess_teacher_profile(exclude=pid)
+        teacher = None
+        if tp:
+            teacher = ChessAI(name=tp['name'], autoload=False, style='searcher',
+                              think_time=CHESS_TRAIN_THINK,
+                              max_depth=Chess.depth_ceiling(tp['blunder']))
+            teacher.record['played'] = 40        # skip its warm-up ramp
+        t = ai.train_against(teacher=teacher, games=CHESS_TRAIN_GAMES)
+        line = ('%s sparred %d games — %dW %dL %dD'
+                % (p['name'], t['games'], t['won'], t['lost'], t['drawn']))
+    else:
+        t = ai.self_play(CHESS_TRAIN_GAMES, think_time=CHESS_TRAIN_THINK,
+                         max_depth=2, max_plies=140)
+        line = ('%s self-played %d games — %d decisive, %d drawn'
+                % (p['name'], t['games'], t['white'] + t['black'], t['draw']))
+    ai.save_progress()
+    return line, CHESS_TRAIN_GAMES
+
+
+def chess_ladder_game():
+    """One rated game between two chess bots, so the ELOs keep moving.
+
+    Uses the real engine and real seats, so a learner plays as a learner —
+    which is the whole point of rating them against each other.
+    """
+    with LOCK:
+        pool = [p for p in PROFILES['order'] if not chess_bot_busy(p)]
+        if len(pool) < 2:
+            return 0
+        seats = []
+        for i, pid in enumerate(random.sample(pool, 2)):
+            s = profile_seat(pid, game='chess')
+            if not s:
+                return 0
+            s['id'] = 'sim:%d' % i
+            s['think'] = CHESS_TRAIN_THINK
+            seats.append(s)
+    # Built and played outside the lock: the game is seconds long and holding
+    # the lock for it would stall every other client.
+    g = Chess('standard', seats)
+    for _ in range(600):
+        if not g.bot_step():
+            break
+    if not g.over:                      # ran long; score it where it stands
+        g.finish()
+    with LOCK:
+        record_result(g.result_summary())
+    return 1
+
+
+def run_chess_training(rounds, ladder=1, verbose=False):
+    TRAINING['game'] = 'chess'
+    with LOCK:
+        track_elo('chess')
+    for i in range(rounds):
+        if not TRAINING['running']:
+            break
+        with LOCK:
+            order = PROFILES['order'][:]
+        if not order:
+            break
+        pid = order[i % len(order)]
+        with LOCK:
+            TRAINING['round'] = i + 1
+            TRAINING['who'] = PROFILES['profiles'][pid]['name']
+        line, played = chess_train_round(pid)
+        rated = 0
+        for _ in range(ladder):
+            rated += chess_ladder_game()
+        with LOCK:
+            TRAINING['games'] += played + rated
+            if line:
+                TRAINING['log'].insert(0, line)
+                del TRAINING['log'][6:]
+            track_elo('chess')
+            save_profiles()
+            broadcast_stats()
+        if verbose and line:
+            print('  round %d/%d — %s' % (i + 1, rounds, line))
+
+
 def train_worker(rounds, ladder, game='quixx'):
     try:
-        run_training(rounds, ladder, game)
+        if game == 'chess':
+            run_chess_training(rounds, min(ladder, 2))
+        else:
+            run_training(rounds, ladder, game)
     finally:
         with LOCK:
             TRAINING['running'] = False
@@ -2881,7 +3027,13 @@ class Handler(BaseHTTPRequestHandler):
             rounds = max(1, min(MAX_ROUNDS, rounds))
             ladder = max(0, min(20, int(body.get('ladder') or 4)))
             tgame = str(body.get('game') or 'quixx')
-            if tgame not in BRAINS:
+            # Chess trains through its own path — the hill-climbing trainer
+            # cannot afford it — but from the same button.
+            if tgame == 'chess' and not CHESS_OK:
+                self.err('Chess is unavailable: %s. Run "pip install chess".'
+                         % CHESS_WHY, 501)
+                return
+            if tgame != 'chess' and tgame not in BRAINS:
                 self.err('That game has no trainable AI.')
                 return
             TRAINING.update({'running': True, 'round': 0, 'rounds': rounds,
@@ -3092,25 +3244,54 @@ def train_cli(rounds, game='quixx'):
     if load_profiles():
         print('  Minted a new roster: %s'
               % ', '.join(p['name'] for p in roster()))
-    ref = [p['name'] for p in roster() if (p['brains'].get(game) or {}).get('reference')]
-    if ref:
-        print('  Reference (plays the original, never trains): %s' % ref[0])
-    print('\n  Training the AI by self-play: %d rounds '
-          '(%d trial games each, plus rated ladder games).\n' % (rounds, TRAIN_GAMES))
+    if game != 'chess':
+        ref = [p['name'] for p in roster()
+               if (p['brains'].get(game) or {}).get('reference')]
+        if ref:
+            print('  Reference (plays the original, never trains): %s' % ref[0])
+        print('\n  Training the AI by self-play: %d rounds '
+              '(%d trial games each, plus rated ladder games).\n'
+              % (rounds, TRAIN_GAMES))
+    else:
+        learners = [p['name'] for p in roster()
+                    if p.get('style') == 'learner']
+        print('\n  Training the chess bots: %d rounds, %d games each, plus '
+              'rated games.' % (rounds, CHESS_TRAIN_GAMES))
+        print('  Searchers self-play to tune their evaluation; learners spar '
+              'against\n  the sharpest searcher, because a blind opponent does '
+              'not punish blunders.')
+        if learners:
+            print('  Learners: %s\n' % ', '.join(learners))
     TRAINING.update({'running': True, 'rounds': rounds, 'round': 0, 'game': game,
                      'adopted': 0, 'games': 0, 'started': iso_now()})
     start = time.time()
     try:
-        run_training(rounds, ladder=4, game=game, verbose=True)
+        if game == 'chess':
+            run_chess_training(rounds, ladder=1, verbose=True)
+        else:
+            run_training(rounds, ladder=4, game=game, verbose=True)
     except KeyboardInterrupt:
         print('\n  Stopped early — progress so far is saved.')
     finally:
         TRAINING['running'] = False
         save_profiles()
-    print('\n  %d rounds, %d improvements, %d games, %.0fs.'
-          % (TRAINING['round'], TRAINING['adopted'], TRAINING['games'],
-             time.time() - start))
-    print('  Ratings after self-play (%s):' % game)
+    if game == 'chess':
+        # "Improvements" counts adopted mutations, which is the hill-climbing
+        # trainer's idea and means nothing here — chess bots learn every game
+        # rather than accepting or rejecting a candidate brain.
+        print('\n  %d rounds, %d games, %.0fs.'
+              % (TRAINING['round'], TRAINING['games'], time.time() - start))
+        seen = min(TRAINING['round'], len(roster()))
+        if TRAINING['round'] < len(roster()):
+            print('  Rounds go round the roster one bot at a time, so that '
+                  'reached %d of %d bots.\n  Use at least %d rounds to give '
+                  'everyone a turn.'
+                  % (seen, len(roster()), len(roster())))
+    else:
+        print('\n  %d rounds, %d improvements, %d games, %.0fs.'
+              % (TRAINING['round'], TRAINING['adopted'], TRAINING['games'],
+                 time.time() - start))
+    print('  Ratings after training (%s):' % game)
     rows = sorted(profiles_payload(),
                   key=lambda r: -(r['elos'].get(game) or 0))
     for row in rows:
@@ -3133,9 +3314,10 @@ def main():
         except ValueError:
             rounds = DEFAULT_ROUNDS
         tgame = args[2] if len(args) > 2 else 'quixx'
-        if tgame not in BRAINS:
+        trainable = sorted(BRAINS) + (['chess'] if CHESS_OK else [])
+        if tgame not in trainable:
             print('  Unknown game %r — try one of: %s'
-                  % (tgame, ', '.join(sorted(BRAINS))))
+                  % (tgame, ', '.join(trainable)))
             return
         train_cli(max(1, min(500, rounds)), tgame)
         return
