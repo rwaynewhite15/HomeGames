@@ -314,11 +314,16 @@
 
   /* ---------- chess ----------
      The board is a plain 8x8 grid sized off its own width, so it stays square
-     from a phone to a desktop without measuring anything in script. Pieces are
-     the solid Unicode glyphs for both colours, coloured by CSS rather than
-     using the outline set: the outline glyphs render hairline-thin or fall
-     back to a different face on a lot of devices, and a white king you cannot
-     see is worse than no board at all. */
+     from a phone to a desktop without measuring anything in script.
+
+     Pieces are inline SVG. They started as the solid Unicode glyphs recoloured
+     by CSS, which works on a desktop and fails badly on a phone: iOS and most
+     Android builds hand U+2654–U+265F to the emoji font, which ignores `color`
+     and `text-shadow` and paints its own artwork — so every white piece
+     arrived as a picture of a black one. There is no styling fix for that,
+     because the glyph is never text to begin with. SVG also renders identically
+     on every device and stays sharp at any square size, which the system chess
+     font emphatically does not. */
   .cwrap{display:flex;gap:14px;flex-wrap:wrap;align-items:flex-start;margin-bottom:14px;}
   .cboard-box{flex:1 1 340px;min-width:0;max-width:520px;}
   /* Both axes are stated, and as minmax(0,1fr) rather than 1fr: a plain 1fr
@@ -328,35 +333,82 @@
      eighth of a square board whatever is standing on it. */
   .cboard{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));
     grid-template-rows:repeat(8,minmax(0,1fr));width:100%;aspect-ratio:1/1;
-    border:6px solid #6f4826;border-radius:12px;overflow:hidden;
-    box-shadow:inset 0 2px 10px rgba(0,0,0,.3),0 1px 0 #fff;}
+    border-radius:6px;overflow:hidden;
+    box-shadow:0 4px 18px rgba(0,0,0,.28),0 1px 3px rgba(0,0,0,.2);}
   .csq{position:relative;display:flex;align-items:center;justify-content:center;
-    min-width:0;min-height:0;
-    font-size:min(7.4vw,38px);line-height:1;user-select:none;background:#efdfc0;}
-  .csq.dark{background:#b58863;}
+    min-width:0;min-height:0;line-height:1;user-select:none;background:#ebecd0;}
+  .csq.dark{background:#739552;}
   .csq.pickable{cursor:pointer;}
-  /* The piece itself. White gets a dark rim so it reads on the light squares. */
-  .cpc{pointer-events:none;}
-  .cpc.w{color:#fff;text-shadow:0 0 1px #2b2b33,0 0 2px #2b2b33,1px 1px 0 #2b2b33,-1px -1px 0 #2b2b33;}
-  .cpc.b{color:#25242a;text-shadow:0 0 1px rgba(255,255,255,.5);}
+
+  /* The piece. Two flat tones and a single outline weight, which is what makes
+     a set read at 38px on a phone: fussy gradients turn to mud at that size. */
+  .cpc{width:100%;height:100%;display:block;pointer-events:none;
+    filter:drop-shadow(0 1.5px 1.2px rgba(0,0,0,.32));
+    /* The slide. Set by chessAnimate() as a starting offset that it then
+       clears, so the piece travels from the square it left. */
+    transition:transform .2s cubic-bezier(.22,.72,.3,1);}
+  .cpc .p{stroke-width:1.5;stroke-linejoin:round;stroke-linecap:round;}
+  .cpc.w .p{fill:#fff;stroke:#54504a;}
+  .cpc.b .p{fill:#332f2b;stroke:#14120f;}
+  /* Detail strokes — the bishop's slit, the knight's eye — follow the outline
+     colour so they read on either piece without a second rule per shape. */
+  .cpc .d{fill:none;stroke-width:1.4;stroke-linecap:round;}
+  .cpc.w .d{stroke:#54504a;}
+  .cpc.b .d{stroke:#8d8880;}
+  .csq.moving{z-index:4;}
+
   /* Where the last move went, so a move made while you were looking away is
-     still visible when you look back. */
-  .csq.last::after{content:'';position:absolute;inset:0;background:rgba(227,165,30,.42);}
-  .csq.sel::after{content:'';position:absolute;inset:0;background:rgba(63,111,196,.45);}
+     still visible when you look back. Yellow-green over both square colours,
+     the way every board online does it. */
+  .csq.last::after{content:'';position:absolute;inset:0;background:rgba(245,246,105,.52);}
+  .csq.sel::after{content:'';position:absolute;inset:0;background:rgba(245,246,105,.62);}
   /* A destination: a dot on an empty square, a ring around something to take,
      which is the convention every chess site uses and nobody has to be told. */
-  .csq.dest::before{content:'';position:absolute;left:50%;top:50%;width:26%;height:26%;
-    transform:translate(-50%,-50%);border-radius:50%;background:rgba(43,43,51,.34);}
-  .csq.dest.occupied::before{width:86%;height:86%;background:none;border-radius:50%;
-    border:5px solid rgba(43,43,51,.34);}
+  .csq.dest::before{content:'';position:absolute;left:50%;top:50%;width:29%;height:29%;
+    transform:translate(-50%,-50%);border-radius:50%;background:rgba(0,0,0,.14);z-index:2;}
+  /* A capture ring, drawn as a gradient rather than a border so its thickness
+     scales with the square instead of needing a pixel value that is right on
+     one screen and wrong on the next. closest-side puts 100% at the square's
+     edge, so the ring hugs it. */
+  .csq.dest.occupied::before{width:100%;height:100%;border-radius:0;
+    background:radial-gradient(circle closest-side,
+      transparent 0 82%,rgba(0,0,0,.14) 82% 100%);}
   .csq.check::after{content:'';position:absolute;inset:0;
-    background:radial-gradient(circle,rgba(214,69,69,.75) 10%,rgba(214,69,69,0) 72%);}
-  .csq .co{position:absolute;font-size:9px;font-weight:700;opacity:.55;pointer-events:none;}
-  .csq .co.f{right:2px;bottom:1px;}
-  .csq .co.r{left:2px;top:1px;}
+    background:radial-gradient(circle,rgba(214,69,69,.9) 12%,rgba(214,69,69,0) 70%);}
+  /* Coordinates sit in the square's own colour-complement, as on chess.com,
+     rather than a grey that fights both. */
+  .csq .co{position:absolute;font-size:min(2.1vw,11px);font-weight:700;
+    pointer-events:none;color:#739552;}
+  .csq.dark .co{color:#ebecd0;}
+  .csq .co.f{right:3px;bottom:1px;}
+  .csq .co.r{left:3px;top:1px;}
+
+  /* Sound / commentary toggles. */
+  .ctools{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:9px;align-items:center;}
+  .ctool{font:inherit;font-size:.78em;font-weight:700;cursor:pointer;
+    background:#fff;border:1px solid #d8d2c6;border-radius:999px;
+    padding:5px 11px;color:#6b6660;line-height:1;}
+  .ctool.on{background:#739552;border-color:#5f7f43;color:#fff;}
+  .ctool:hover{border-color:var(--blue);}
+  .ceval{margin-left:auto;font-size:.78em;font-weight:700;color:#777;}
+
+  /* Commentary. Dark so it reads as a broadcast strip rather than another
+     panel, and capped in height so it never pushes the board off screen. */
+  .ccomm{background:#262421;color:#e6e2d8;border-radius:12px;padding:9px 12px;
+    font-size:.84em;max-height:160px;overflow:auto;line-height:1.5;}
+  .ccomm p{margin:0 0 5px;}
+  .ccomm p:last-child{margin-bottom:0;}
+  .ccomm .mv{color:#f0d47c;font-weight:700;}
+  .ccomm .good{color:#9fd67a;font-weight:700;}
+  .ccomm .bad{color:#e8836f;font-weight:700;}
+  .ccomm .none{color:#8d8880;}
 
   .cside{flex:1 1 190px;min-width:0;display:flex;flex-direction:column;gap:10px;}
-  .ctaken{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:22px;min-height:26px;}
+  /* A piece away from the board needs a size of its own: .cpc is 100% of its
+     square, which resolves to nothing inside a button or a captured list. */
+  .ctaken .cpc{width:21px;height:21px;filter:none;}
+  .cpromo button .cpc{width:34px;height:34px;}
+  .ctaken{display:flex;align-items:center;gap:2px;flex-wrap:wrap;min-height:26px;}
   .ctaken .lbl{font-size:11px;color:#777;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
   .ctaken .adv{font-size:12px;color:#777;font-weight:700;}
   .cmoves{background:#fff;border:1px solid #e6e2da;border-radius:12px;padding:8px 10px;
@@ -372,8 +424,8 @@
      said nothing, but underpromotion is a real move and this is the only
      moment it can be chosen. */
   .cpromo{display:flex;gap:8px;justify-content:center;margin-bottom:10px;flex-wrap:wrap;}
-  .cpromo button{font-size:30px;line-height:1;background:#fff;border:2px solid #d8d2c6;
-    border-radius:12px;padding:4px 12px;}
+  .cpromo button{line-height:0;background:#fff;border:2px solid #d8d2c6;
+    border-radius:12px;padding:6px 12px;}
   .cpromo button:hover{border-color:var(--blue);}
 
   .clearn{background:#fff;border:1px solid #e6e2da;border-radius:12px;padding:10px 12px;font-size:.84em;}
@@ -1287,14 +1339,64 @@ function renderMancala(g,me,body){
 
    Two clicks: pick up a piece, put it down. Picking up is only offered for
    squares `legal` actually names, so a piece that cannot move does not lift. */
-const C_GLYPH={K:'♚',Q:'♛',R:'♜',B:'♝',N:'♞',P:'♟'};
+/* The piece set, drawn here rather than fetched or typed as text.
+
+   Unicode was the obvious choice and is the wrong one on a phone: iOS and most
+   Android builds render U+2654–U+265F through the emoji font, which supplies
+   its own artwork and ignores `color`, so white pieces came out as pictures of
+   black pieces. Nothing in CSS reaches inside an emoji glyph to recolour it.
+
+   These are original shapes on a 45×45 grid, not any site's set — the
+   silhouettes are the traditional ones because that is what a chess piece is,
+   but the paths are written for this board. Colour comes from CSS (.cpc.w /
+   .cpc.b) so one definition serves both sides: `p` for the body, `d` for the
+   detail strokes that sit on top. */
+const C_SVG={
+  P:'<path class="p" d="M22.5 11.4a4.1 4.1 0 0 1 2.4 7.4c2.7 1.2 4.5 3.9 4.5 7'
+   +' 0 2.2-.9 4.2-2.5 5.7 4 1.5 6.9 4.2 7.9 8.5h-25c1-4.3 3.9-7 7.9-8.5a7.6 7.6'
+   +' 0 0 1-2.5-5.7c0-3.1 1.8-5.8 4.5-7a4.1 4.1 0 0 1 2.3-7.4z"/>',
+  R:'<path class="p" d="M11.6 40v-2.6l2.8-2.6V19.3l-2.4-2v-6.6h4.6v3h4.2v-3h5.4v3'
+   +'h4.2v-3h4.6v6.6l-2.4 2v15.5l2.8 2.6V40z"/>'
+   +'<path class="d" d="M14.4 19.3h16.2M14.4 34.8h16.2"/>',
+  /* The knight is the one piece that has to be a silhouette rather than a
+     stack of primitives — an ear, a muzzle jutting left, and the mane down the
+     back are what make it read as a horse at 40px instead of a lump. */
+  N:'<path class="p" d="M26.9 8.1l1.7 3.9c4.4 2.9 6.9 8.3 6.9 15.2V36H13.2v-2.6'
+   +'c0-4.3 1.4-8.4 4.1-11.7l.8-1-2.2-1.5-3.3 3.9a1.8 1.8 0 0 1-2.6.1l-1.1-1.1'
+   +'a1.8 1.8 0 0 1-.1-2.4l4.7-5.7c2.5-3 5.9-5.1 9.8-6z"/>'
+   +'<path class="p" d="M12.4 36h20.6c1 1.9.6 3.1-.6 4H13c-1.2-.9-1.6-2.1-.6-4z"/>'
+   +'<path class="d" d="M23.6 14.6a1 1 0 1 0 .1 0M14.6 20.4l3.1-1.9"/>',
+  /* A bishop is a mitre with a diagonal slit. An earlier version drew that
+     slit as a plus sign, which turned every bishop into something that read as
+     a king at a glance — the two pieces are close enough already. */
+  B:'<path class="p" d="M22.5 7.6a2.3 2.3 0 0 0-1.4 4.1c-3.6 2.7-6 6.9-6 11'
+   +' 0 2.9 1.1 5.3 2.9 7h9a9.8 9.8 0 0 0 2.9-7c0-4.1-2.4-8.3-6-11a2.3 2.3 0 0'
+   +' 0-1.4-4.1z"/>'
+   +'<path class="p" d="M13.6 31.7h17.8c1.3 2.6.6 5.1-1.3 6.6H14.9c-1.9-1.5-2.6-4-1.3-6.6z"/>'
+   +'<path class="d" d="M24.8 15.1l-4.4 5.9"/>',
+  Q:'<path class="p" d="M22.5 8a2.2 2.2 0 0 1 1.3 4l2.9 7.3 4.6-5.4a2.2 2.2 0 1 1'
+   +' 2.2 1l-1.2 8.2 4.6-3.4a2.2 2.2 0 1 1 1 2.1l-4 12.2H11.1l-4-12.2a2.2 2.2 0 1'
+   +' 1 1-2.1l4.6 3.4-1.2-8.2a2.2 2.2 0 1 1 2.2-1l4.6 5.4 2.9-7.3a2.2 2.2 0 0 1'
+   +' 1.3-4z"/>'
+   +'<path class="p" d="M11.6 34.9h21.8c.6 2.6-.6 4.1-2.4 5.1H14c-1.8-1-3-2.5-2.4-5.1z"/>',
+  K:'<path class="p" d="M21.2 6.6h2.6v3.2H27v2.6h-3.2v3.3h-2.6v-3.3H18v-2.6h3.2z"/>'
+   +'<path class="p" d="M22.5 14.3c4.9 0 8.9 3.6 8.9 8.1 0 2.6-1.2 4.5-3.1 6.5'
+   +'l-5.8 6-5.8-6c-1.9-2-3.1-3.9-3.1-6.5 0-4.5 4-8.1 8.9-8.1z"/>'
+   +'<path class="p" d="M12.6 31.2c4.2-2.4 7.2-2.4 9.9-.6 2.7-1.8 5.7-1.8 9.9.6'
+   +'v5.5c-4.2-2.4-7.2-2.4-9.9-.6-2.7-1.8-5.7-1.8-9.9.6z"/>'
+   +'<path class="p" d="M12.6 37.4c4.2-2.4 7.2-2.4 9.9-.6 2.7-1.8 5.7-1.8 9.9.6'
+   +'v2.2H12.6z"/>',
+};
 const C_VALUE={Q:9,R:5,B:3,N:3,P:1,K:0};
 const C_FILES='abcdefgh';
 let chessSel=null;        // square a piece has been lifted from, e.g. 'e2'
 let chessPromo=null;      // {from,to} waiting on which piece to promote to
 let chessSeenFen=null;    // the position the two above were chosen against
 
-function chessMove(uci){chessSel=null;chessPromo=null;act('move',{uci:uci});}
+function chessMove(uci){
+  chessSlideOwn(uci.slice(0,2),uci.slice(2,4));
+  chessSel=null;chessPromo=null;act('move',{uci:uci});
+}
 function chessResign(){
   if(confirm('Resign this game?'))act('resign');
 }
@@ -1356,13 +1458,277 @@ function chessTaken(g){
   };
 }
 function chessPieceHtml(code,cls){
-  return '<span class="cpc '+code[0]+(cls?' '+cls:'')+'">'+C_GLYPH[code[1]]+'</span>';
+  return '<svg class="cpc '+code[0]+(cls?' '+cls:'')+'" viewBox="0 0 45 45" '
+    +'aria-hidden="true">'+C_SVG[code[1]]+'</svg>';
 }
+
+/* ---------- sound ----------
+   Synthesised rather than shipped as files: the repo is a server and one HTML
+   page, and six .mp3s would be the first binary assets in it. A short noise
+   burst through a falling band-pass is a convincing piece-on-wood knock, and
+   it costs nothing to download.
+
+   The context is built on the first tap because every browser refuses to start
+   audio without a gesture. */
+let chessAudio=null, chessSoundOn=localStorage.getItem('hgChessSound')!=='0';
+function chessAudioCtx(){
+  if(chessAudio)return chessAudio;
+  const AC=window.AudioContext||window.webkitAudioContext;
+  if(!AC)return null;
+  try{chessAudio=new AC();}catch(e){return null;}
+  return chessAudio;
+}
+function chessNoise(ctx,when,dur,freq,q,gain){
+  // A knock: filtered white noise with a fast decay. Wood, roughly.
+  const n=Math.max(1,Math.floor(ctx.sampleRate*dur));
+  const buf=ctx.createBuffer(1,n,ctx.sampleRate);
+  const d=buf.getChannelData(0);
+  for(let i=0;i<n;i++)d[i]=(Math.random()*2-1)*Math.pow(1-i/n,2.5);
+  const src=ctx.createBufferSource();src.buffer=buf;
+  const bp=ctx.createBiquadFilter();bp.type='bandpass';
+  bp.frequency.setValueAtTime(freq,when);
+  bp.frequency.exponentialRampToValueAtTime(Math.max(80,freq*0.45),when+dur);
+  bp.Q.value=q;
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(gain,when);
+  g.gain.exponentialRampToValueAtTime(0.0001,when+dur);
+  src.connect(bp);bp.connect(g);g.connect(ctx.destination);
+  src.start(when);src.stop(when+dur);
+}
+function chessTone(ctx,when,dur,f0,f1,gain,type){
+  const o=ctx.createOscillator();o.type=type||'sine';
+  o.frequency.setValueAtTime(f0,when);
+  if(f1)o.frequency.exponentialRampToValueAtTime(f1,when+dur);
+  const g=ctx.createGain();
+  g.gain.setValueAtTime(0.0001,when);
+  g.gain.exponentialRampToValueAtTime(gain,when+dur*0.12);
+  g.gain.exponentialRampToValueAtTime(0.0001,when+dur);
+  o.connect(g);g.connect(ctx.destination);
+  o.start(when);o.stop(when+dur);
+}
+function chessPlay(kind){
+  if(!chessSoundOn)return;
+  const ctx=chessAudioCtx();if(!ctx)return;
+  if(ctx.state==='suspended')ctx.resume();
+  const t=ctx.currentTime+0.01;
+  if(kind==='move')          chessNoise(ctx,t,0.075,760,1.1,0.34);
+  else if(kind==='capture'){ chessNoise(ctx,t,0.11,430,0.9,0.5);
+                             chessNoise(ctx,t+0.012,0.07,1150,1.4,0.22); }
+  else if(kind==='castle'){  chessNoise(ctx,t,0.07,700,1.1,0.3);
+                             chessNoise(ctx,t+0.085,0.07,700,1.1,0.3); }
+  else if(kind==='check'){   chessNoise(ctx,t,0.07,760,1.1,0.3);
+                             chessTone(ctx,t+0.05,0.2,880,1320,0.16,'triangle'); }
+  else if(kind==='promote'){ chessTone(ctx,t,0.1,660,990,0.15,'triangle');
+                             chessTone(ctx,t+0.09,0.18,990,1320,0.15,'triangle'); }
+  else if(kind==='win'){     [523,659,784,1047].forEach((f,i)=>
+                               chessTone(ctx,t+i*0.1,0.26,f,0,0.15,'triangle')); }
+  else if(kind==='lose'){    [587,494,392,294].forEach((f,i)=>
+                               chessTone(ctx,t+i*0.12,0.3,f,0,0.14,'sine')); }
+  else if(kind==='draw'){    [523,523].forEach((f,i)=>
+                               chessTone(ctx,t+i*0.16,0.26,f,0,0.13,'sine')); }
+}
+function chessToggleSound(){
+  chessSoundOn=!chessSoundOn;
+  localStorage.setItem('hgChessSound',chessSoundOn?'1':'0');
+  if(chessSoundOn)chessPlay('move');       // so you hear what you just turned on
+  renderRoom();
+}
+
+/* ---------- commentary ----------
+   Heuristic, and worth being plain about that: it reads the move, the material
+   on the board and the server's own evaluation of the position. It is not
+   engine analysis and will not spot a deep tactic. What it does reliably is
+   notice the things that actually decide games at this level — a piece left
+   hanging, a queen traded, a king still in the middle. */
+let chessCommOn=localStorage.getItem('hgChessComm')==='1';
+let chessSpeakOn=localStorage.getItem('hgChessSpeak')==='1';
+let chessComm=[];              // newest last, {text, tone}
+let chessCommFen=null;         // position the last line was written for
+let chessPrevEval=null;
+
+function chessToggleComm(){
+  chessCommOn=!chessCommOn;
+  localStorage.setItem('hgChessComm',chessCommOn?'1':'0');
+  if(!chessCommOn){chessComm=[];if(window.speechSynthesis)speechSynthesis.cancel();}
+  renderRoom();
+}
+function chessToggleSpeak(){
+  chessSpeakOn=!chessSpeakOn;
+  localStorage.setItem('hgChessSpeak',chessSpeakOn?'1':'0');
+  if(!chessSpeakOn&&window.speechSynthesis)speechSynthesis.cancel();
+  renderRoom();
+}
+function chessSay(text){
+  if(!chessSpeakOn||!window.speechSynthesis)return;
+  try{
+    const u=new SpeechSynthesisUtterance(text);
+    u.rate=1.05;u.pitch=1;u.volume=0.9;
+    speechSynthesis.speak(u);
+  }catch(e){/* a voice that will not speak is not worth an error */}
+}
+const C_PIECE_NAME={K:'King',Q:'Queen',R:'Rook',B:'Bishop',N:'Knight',P:'Pawn'};
+/* SAN into words: "Nxe5+" -> "Knight takes e5, check". `forSpeech` splits the
+   square into "e 5", which a speech engine reads as a square instead of as the
+   number eighty-five, and which looks wrong written down — hence the flag
+   rather than one string used for both. */
+function chessSanWords(san,forSpeech){
+  if(!san)return '';
+  if(san.indexOf('O-O-O')===0)return 'castles queenside';
+  if(san.indexOf('O-O')===0)return 'castles kingside';
+  let s=san,suffix='';
+  if(/#$/.test(s)){suffix=', checkmate';s=s.slice(0,-1);}
+  else if(/\+$/.test(s)){suffix=', check';s=s.slice(0,-1);}
+  let promo='';
+  const pm=s.match(/=([QRBN])$/);
+  if(pm){promo=', promoting to '+C_PIECE_NAME[pm[1]].toLowerCase();s=s.slice(0,-2);}
+  const piece=/^[KQRBN]/.test(s)?C_PIECE_NAME[s[0]]:'Pawn';
+  const takes=s.indexOf('x')>=0;
+  const dest=s.slice(-2);
+  return piece.toLowerCase()+(takes?' takes on ':' to ')
+    +(forSpeech?dest[0]+' '+dest[1]:dest)+promo+suffix;
+}
+/* One line per move, both sides.
+   Reading g.last would only ever describe the bot: the server applies your
+   move and the reply together and broadcasts once, so the position where only
+   you have moved never reaches the client. Walking the history instead means
+   both moves get a line. */
+let chessCommPly=0;
+function chessCommentate(g,me){
+  if(!chessCommOn||chessCommFen===g.fen)return;
+  const first=chessCommFen===null;
+  chessCommFen=g.fen;
+  const hist=g.history||[];
+  const ev=(typeof g.eval==='number')?g.eval:null;
+  const prev=chessPrevEval;
+  chessPrevEval=ev;
+
+  if(first){
+    // Joining a game in progress should not replay it from move one.
+    chessCommPly=hist.length;
+    chessPush('Board set. '+g.players[0].name+' has White.','none');
+    return;
+  }
+
+  const spoken=[];
+  for(let i=chessCommPly;i<hist.length;i++){
+    const san=hist[i];
+    const moverIdx=i%2;                    // history[0] is White's first move
+    const isMe=(me>=0&&moverIdx===me);
+    const who=isMe?'You':g.players[moverIdx].name;
+    const words=chessSanWords(san,false);
+    let text=who+': '+words.charAt(0).toUpperCase()+words.slice(1)+'.';
+    let tone='';
+    if(/#$/.test(san)){text+=' That is the game.';tone='good';}
+    else if(/^O-O/.test(san))text+=' King tucked away.';
+    chessPush(text,tone);
+    spoken.push((isMe?'You. ':who+'. ')+chessSanWords(san,true));
+  }
+  chessCommPly=hist.length;
+
+  // The swing covers everything that happened since the last update — usually
+  // your move and the reply together — so it is reported as the exchange it
+  // is rather than pinned on one move it may not belong to.
+  if(ev!==null&&prev!==null&&!g.over){
+    let swing=ev-prev;
+    if(me===1)swing=-swing;                // say it from the viewer's side
+    let note='',tone='';
+    if(swing<=-250)     {note='That exchange costs you material.';tone='bad';}
+    else if(swing<=-110){note='That run of moves went their way.';tone='bad';}
+    else if(swing>=250) {note='You come out of that up material.';tone='good';}
+    else if(swing>=110) {note='That went your way.';tone='good';}
+    if(note){chessPush(note,tone);spoken.push(note);}
+  }
+  if(spoken.length)chessSay(spoken.join('. '));
+}
+function chessPush(text,tone){
+  chessComm.push({text:text,tone:tone||''});
+  if(chessComm.length>40)chessComm.shift();
+}
+
+/* ---------- animation ----------
+   FLIP, done the cheap way. The board is rebuilt from innerHTML on every
+   update, so instead of keeping nodes around we take the piece that just
+   arrived, place it back where it came from with an instant transform, and
+   then clear the transform so CSS carries it home. One reflow, no bookkeeping,
+   and it degrades to "the piece is simply there" if anything is missing. */
+let chessAnimFen=null, chessFlip=false;
+/* Pixel offset from one square to another, in board coordinates. */
+function chessDelta(from,to,size,flip){
+  const dir=flip?-1:1;
+  return {dx:(C_FILES.indexOf(from[0])-C_FILES.indexOf(to[0]))*size*dir,
+          dy:((8-Number(from[1]))-(8-Number(to[1])))*size*dir};
+}
+function chessAnimate(g,flip){
+  if(g.fen===chessAnimFen)return;
+  const fresh=chessAnimFen===null;
+  // Recorded before the early returns below. Leaving it unset when there is no
+  // last move meant the opening position never registered, so the first real
+  // move of every game looked like first paint and was silently swallowed.
+  chessAnimFen=g.fen;
+  if(fresh||!g.last)return;         // first paint, or nothing has moved yet
+  const board=document.querySelector('.cboard');
+  if(!board)return;
+  const sq=board.querySelector('[data-sq="'+g.last.to+'"]');
+  const piece=sq&&sq.querySelector('.cpc');
+  const size=board.clientWidth/8;
+  if(!piece||!size)return;
+  const d=chessDelta(g.last.from,g.last.to,size,flip);
+  sq.classList.add('moving');
+  piece.style.transition='none';
+  piece.style.transform='translate('+d.dx+'px,'+d.dy+'px)';
+  // Two frames, not a forced reflow. Setting the offset and clearing it in one
+  // tick lets the browser coalesce both writes, so it never sees a change to
+  // transition from and nothing moves — reading offsetWidth flushes layout but
+  // does not separate the two style changes into different frames.
+  requestAnimationFrame(()=>{
+    piece.style.transition='';
+    requestAnimationFrame(()=>{
+      piece.style.transform='';
+      setTimeout(()=>sq.classList.remove('moving'),240);
+    });
+  });
+}
+/* Your own move, slid before the server has answered.
+   The server applies your move and the reply together and broadcasts once, so
+   the position where only you have moved never arrives — without this your
+   piece jumps while the bot's glides, which reads as the board stuttering. The
+   authoritative render lands a moment later and settles everything. */
+function chessSlideOwn(from,to){
+  const board=document.querySelector('.cboard');
+  if(!board)return;
+  const src=board.querySelector('[data-sq="'+from+'"]');
+  const dst=board.querySelector('[data-sq="'+to+'"]');
+  const piece=src&&src.querySelector('.cpc');
+  const size=board.clientWidth/8;
+  if(!piece||!size)return;
+  const capture=!!(dst&&dst.querySelector('.cpc'));
+  const d=chessDelta(to,from,size,chessFlip);   // travel there, so from->to
+  src.classList.add('moving');
+  piece.style.transform='translate('+d.dx+'px,'+d.dy+'px)';
+  chessPlay(capture?'capture':'move');
+}
+/* Which sound a move deserves. Read off SAN and the board, since the server
+   does not label moves as captures. */
+function chessMoveSound(g){
+  if(g.fen===chessSoundFen)return;
+  const first=chessSoundFen===null;
+  chessSoundFen=g.fen;
+  if(first||!g.last)return;
+  const san=g.history&&g.history.length?g.history[g.history.length-1]:'';
+  if(g.over)                    chessPlay('move');
+  else if(/^O-O/.test(san))     chessPlay('castle');
+  else if(san.indexOf('=')>=0)  chessPlay('promote');
+  else if(g.check)              chessPlay('check');
+  else if(san.indexOf('x')>=0)  chessPlay('capture');
+  else                          chessPlay('move');
+}
+let chessSoundFen=null;
 
 function renderChess(g,me,body){
   // Seat 0 is White. A spectator watches over White's shoulder.
   const seat=me>=0?me:0;
   const flip=seat===1;
+  chessFlip=flip;          // chessSlideOwn fires from a click, outside render
   const myTurn=me>=0&&g.active===me&&!g.over;
   const legal=g.legal||{};
 
@@ -1370,6 +1736,14 @@ function renderChess(g,me,body){
   // either side puts it down.
   if(chessSeenFen!==g.fen){chessSeenFen=g.fen;chessSel=null;chessPromo=null;}
   if(!myTurn){chessSel=null;chessPromo=null;}
+
+  // A rematch reuses this screen, so the per-game trackers have to let go or
+  // the new game inherits the old one's commentary and animates its first move
+  // from wherever the last one ended.
+  if(!(g.history||[]).length&&!g.over&&chessAnimFen!==null&&chessAnimFen!==g.fen){
+    chessComm=[];chessCommFen=null;chessPrevEval=null;chessCommPly=0;
+    chessAnimFen=null;chessSoundFen=null;
+  }
 
   let h='<div class="dice-tray">';
   if(g.over){
@@ -1401,6 +1775,22 @@ function renderChess(g,me,body){
       if(g.board[r][f]===turn+'K')checkSq=C_FILES[f]+(8-r);
   }
 
+  // Toggles sit above the board so they are reachable with a thumb, and the
+  // evaluation rides along on the right when the server has sent one.
+  h+='<div class="ctools">'
+    +'<button class="ctool'+(chessSoundOn?' on':'')+'" onclick="chessToggleSound()">'
+    +(chessSoundOn?'🔊 Sound':'🔇 Sound')+'</button>'
+    +'<button class="ctool'+(chessCommOn?' on':'')+'" onclick="chessToggleComm()">'
+    +'💬 Commentary</button>'
+    +(chessCommOn?'<button class="ctool'+(chessSpeakOn?' on':'')
+      +'" onclick="chessToggleSpeak()">🗣️ Read aloud</button>':'');
+  if(typeof g.eval==='number'&&!g.over){
+    const p=(g.eval/100);
+    h+='<span class="ceval">'+(Math.abs(p)<0.2?'level'
+      :(p>0?'White':'Black')+' +'+Math.abs(p).toFixed(1))+'</span>';
+  }
+  h+='</div>';
+
   h+='<div class="cwrap"><div class="cboard-box"><div class="cboard">';
   for(let i=0;i<8;i++){
     const r=flip?7-i:i;                       // board[0] is rank 8
@@ -1418,7 +1808,7 @@ function renderChess(g,me,body){
       // piece may go. Everything else is scenery.
       const tappable=myTurn&&!chessPromo&&(legal[sq]||dests.indexOf(sq)>=0);
       if(tappable)cls.push('pickable');
-      h+='<div class="'+cls.join(' ')+'"'
+      h+='<div class="'+cls.join(' ')+'" data-sq="'+sq+'"'
         +(tappable?' onclick="chessTap(\''+sq+'\')"':'')
         +' title="'+sq+'">';
       if(pc)h+=chessPieceHtml(pc);
@@ -1469,8 +1859,27 @@ function renderChess(g,me,body){
     h+='<button class="small-btn alt" onclick="chessResign()">Resign</button>';
   h+='</div></div>';
 
+  // Commentary is written before the panel is drawn, so the new line is in the
+  // list by the time it renders.
+  chessCommentate(g,me);
+  if(chessCommOn){
+    h+='<div class="ccomm">'+(chessComm.length
+      ? chessComm.slice(-12).map(c=>'<p'+(c.tone?' class="'+c.tone+'"':'')+'>'
+          +esc(c.text)+'</p>').join('')
+      : '<p class="none">Commentary is on. It will pick up from the next move.</p>')
+      +'</div>';
+  }
+
   h+=chessLearnHtml(g,me);
   body.innerHTML=h;
+
+  // After the DOM exists: slide the piece that just moved, and make the noise
+  // that goes with it. Both are no-ops when the position has not changed, so a
+  // re-render for any other reason stays silent and still.
+  chessAnimate(g,flip);
+  chessMoveSound(g);
+  const feed=body.querySelector('.ccomm');
+  if(feed)feed.scrollTop=feed.scrollHeight;
 
   if(g.over&&endShownFor!==room.id+g.reason){
     endShownFor=room.id+g.reason;
@@ -1489,6 +1898,12 @@ function renderChess(g,me,body){
         +'<div><span>'+nm(1-win)+'</span><b>0</b></div>';
     $('rematchBtn').style.display=isHost()?'':'none';
     $('endOverlay').classList.add('show');
+    // Slightly behind the move sound, so the move that ended it lands first.
+    setTimeout(()=>chessPlay(drawn?'draw':(won===false?'lose':'win')),280);
+    if(chessCommOn){
+      chessPush(g.reason||'Game over.',drawn?'':(won===false?'bad':'good'));
+      chessSay(g.reason||'Game over.');
+    }
   }
 }
 

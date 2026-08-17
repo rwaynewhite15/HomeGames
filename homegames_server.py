@@ -1304,12 +1304,13 @@ class Euchre:
 # the lobby, and start_server() says why on the way up.
 try:
     import chess as chesslib
-    from chess_ai import ChessAI
+    from chess_ai import ChessAI, static_eval as chess_static_eval
     CHESS_OK = True
     CHESS_WHY = None
 except ImportError as _chess_err:            # pragma: no cover - environment
     chesslib = None
     ChessAI = None
+    chess_static_eval = None
     CHESS_OK = False
     CHESS_WHY = str(_chess_err)
 
@@ -1596,6 +1597,10 @@ class Chess:
             'moveNo': self.board.fullmove_number,
             'history': list(self.sans),
             'legal': legal,
+            # White-positive centipawns, default weights. The commentary reads
+            # this; sending it costs one features() pass per broadcast and
+            # saves the client from re-implementing an evaluator in JS.
+            'eval': int(round(chess_static_eval(self.board))),
             # What the AI knows and what the last game taught it — enough for a
             # "how is it learning?" panel without another round trip.
             'ai': {str(i): a.stats() for i, a in self.ai.items()},

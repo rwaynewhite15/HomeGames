@@ -237,6 +237,18 @@ ENDGAME_MATERIAL = 1300
 MATE_SCORE = 1_000_000
 
 
+def static_eval(board):
+    """White-positive centipawn evaluation using the *default* weights.
+
+    Deliberately not any particular bot's learned weights: this is what the UI
+    narrates, and commentary should describe the position rather than one
+    opponent's idiosyncratic opinion of it. Cheap enough to call once per
+    broadcast — a single features() pass, no search.
+    """
+    f = features(board)
+    return sum(DEFAULT_WEIGHTS[k] * f[k] for k in FEATURE_KEYS)
+
+
 def features(board):
     """Every evaluation term for one position, white-positive.
 
