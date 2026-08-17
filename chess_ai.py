@@ -237,6 +237,129 @@ ENDGAME_MATERIAL = 1300
 MATE_SCORE = 1_000_000
 
 
+# ============================================================
+#  The searchless policy — how a "learner" bot chooses
+# ============================================================
+# A learner never builds a game tree. It scores each legal move by a set of
+# facts readable straight off the board, and picks from those scores. The
+# weights below are the entire brain, and they start at zero: nothing here is
+# hand-tuned, which is the point — a learner that shipped with "captures are
+# good" already written in would not be learning that, it would be reciting it.
+#
+# Why features and not a table of positions: chess positions stop repeating
+# after about ten plies, so a position->move table learns the opening and then
+# faces something new every game forever. Features generalise — "this move
+# leaves a piece where a pawn can take it" is the same fact in a position never
+# seen before. That generalisation is the job a neural network does in a modern
+# engine; a dozen hand-picked features and a linear policy is the version that
+# fits in pure Python.
+#
+# The cost is honest and large: with no lookahead the bot cannot see a
+# recapture, so it must *learn* that landing on a defended square tends to end
+# badly, rather than working it out. Expect hundreds of games. self_play() is
+# how you buy them without playing them yourself.
+MOVE_FEATURE_KEYS = [
+    'capture',    # value of the piece it takes
+    'hanging',    # value it exposes on a square the opponent attacks
+    'defended',   # the destination is covered by one of ours
+    'check',      # gives check
+    'promote',    # promotion value
+    'escape',     # the piece was attacked where it stood
+    'develop',    # a minor piece leaving the back rank
+    'centre',     # moves toward the middle of the board
+    'pst',        # piece-square improvement for the moving piece
+    'castle',
+    'kingwalk',   # king wandering before the endgame
+    'pawnpush',   # a pawn advancing
+]
+
+# All zero: a fresh learner has no opinions and plays uniformly at random.
+DEFAULT_POLICY = {k: 0.0 for k in MOVE_FEATURE_KEYS}
+POLICY_BOUNDS = {k: (-4.0, 4.0) for k in MOVE_FEATURE_KEYS}
+# Feature magnitudes differ (capture is ~1-9, castle is 0/1), so the rates are
+# scaled to give each roughly the same influence per game.
+POLICY_RATE = {'capture': 0.035, 'hanging': 0.035, 'defended': 0.06,
+               'check': 0.06, 'promote': 0.03, 'escape': 0.035,
+               'develop': 0.06, 'centre': 0.05, 'pst': 0.04,
+               'castle': 0.08, 'kingwalk': 0.06, 'pawnpush': 0.05}
+
+PIECE_VALUE = {chess.PAWN: 100, chess.KNIGHT: 320, chess.BISHOP: 330,
+               chess.ROOK: 500, chess.QUEEN: 900, chess.KING: 0}
+
+
+def _centrality(square):
+    """0 at the rim, 3 in the middle four squares."""
+    f, r = chess.square_file(square), chess.square_rank(square)
+    return 3.0 - max(abs(f - 3.5), abs(r - 3.5)) + 0.5
+
+
+def move_features(board, move):
+    """What the policy knows about one move, read off the position as it
+    stands. Nothing here pushes the move and looks at the result — that would
+    be a one-ply search, and the whole point of a learner is that it has none.
+    """
+    f = dict.fromkeys(MOVE_FEATURE_KEYS, 0.0)
+    piece = board.piece_at(move.from_square)
+    if piece is None:
+        return f
+    us, them = board.turn, not board.turn
+    mine = PIECE_VALUE.get(piece.piece_type, 0) / 100.0
+
+    if board.is_en_passant(move):
+        f['capture'] = 1.0
+    else:
+        victim = board.piece_type_at(move.to_square)
+        if victim:
+            f['capture'] = PIECE_VALUE[victim] / 100.0
+
+    # Is the destination contested? Our own mover still sits on its old square,
+    # so it would count itself as a defender — hence the explicit exclusion.
+    defenders = [s for s in board.attackers(us, move.to_square)
+                 if s != move.from_square]
+    threatened = board.is_attacked_by(them, move.to_square)
+    if defenders:
+        f['defended'] = 1.0
+    if threatened:
+        # *Net* material at risk: what the piece is worth less what the move
+        # just won. Charging the gross value instead made this fire on nearly
+        # every capture, so it moved in lockstep with `capture` and the
+        # gradient could not tell "taking is good" from "being takeable is
+        # bad" — it learned a positive weight for hanging pieces, which is the
+        # one thing a bot with no lookahead cannot afford to get wrong.
+        # Subtracting the capture is what breaks that collinearity.
+        risk = max(0.0, mine - f['capture'])
+        # With a defender the exchange is answered, so only part of it is lost.
+        f['hanging'] = risk * (0.35 if defenders else 1.0)
+
+    if board.is_attacked_by(them, move.from_square):
+        f['escape'] = mine
+    if move.promotion:
+        f['promote'] = PIECE_VALUE.get(move.promotion, 0) / 100.0
+    if board.gives_check(move):
+        f['check'] = 1.0
+    if board.is_castling(move):
+        f['castle'] = 1.0
+
+    back = 0 if us == chess.WHITE else 7
+    if (piece.piece_type in (chess.KNIGHT, chess.BISHOP)
+            and chess.square_rank(move.from_square) == back):
+        f['develop'] = 1.0
+    if piece.piece_type == chess.KING and not board.is_castling(move):
+        f['kingwalk'] = 1.0
+    if piece.piece_type == chess.PAWN:
+        adv = chess.square_rank(move.to_square) - chess.square_rank(move.from_square)
+        f['pawnpush'] = float(adv if us == chess.WHITE else -adv)
+
+    f['centre'] = _centrality(move.to_square) - _centrality(move.from_square)
+
+    table = PST.get(piece.piece_type)
+    if table:
+        a = move.from_square if us == chess.WHITE else chess.square_mirror(move.from_square)
+        b = move.to_square if us == chess.WHITE else chess.square_mirror(move.to_square)
+        f['pst'] = (table[b] - table[a]) / 100.0
+    return f
+
+
 def static_eval(board):
     """White-positive centipawn evaluation using the *default* weights.
 
@@ -401,16 +524,22 @@ class ChessAI:
     BOOK_MAX_PLY = 24
 
     def __init__(self, name='Chess AI', data_path=None, opponent=None,
-                 think_time=1.0, max_depth=4, seed=None, autoload=True):
+                 think_time=1.0, max_depth=4, seed=None, autoload=True,
+                 style='searcher'):
         self.name = name
         self.data_path = data_path or DATA_FILE
         self.opponent = (opponent or 'human').strip().lower() or 'human'
         self.think_time = float(think_time)
         self.max_depth = int(max_depth)
+        # 'searcher' looks ahead; 'learner' never does and plays from the move
+        # policy alone. Both learn — the difference is only how a move is
+        # chosen, which is what makes the pair worth rating against each other.
+        self.style = 'learner' if str(style) == 'learner' else 'searcher'
         self.rng = random.Random(seed)
 
         # Persistent brain.
         self.weights = dict(DEFAULT_WEIGHTS)
+        self.policy = dict(DEFAULT_POLICY)
         self.book = {}          # position key -> {uci: [visits, total_value]}
         self.record = {'played': 0, 'won': 0, 'lost': 0, 'drawn': 0}
         self.opponents = {}     # name -> {'played','won','lost','drawn','openings'}
@@ -449,6 +578,13 @@ class ChessAI:
             for k in FEATURE_KEYS:
                 if isinstance(w.get(k), (int, float)):
                     self.weights[k] = self._clamp(k, float(w[k]))
+
+        p = data.get('policy')
+        if isinstance(p, dict):
+            for k in MOVE_FEATURE_KEYS:
+                if isinstance(p.get(k), (int, float)):
+                    lo, hi = POLICY_BOUNDS[k]
+                    self.policy[k] = min(hi, max(lo, float(p[k])))
 
         book = data.get('book')
         if isinstance(book, dict):
@@ -495,7 +631,12 @@ class ChessAI:
             'updated': iso_now(),
             'record': dict(self.record),
             'updates': self.updates,
+            'style': self.style,
             'weights': {k: round(self.weights[k], 4) for k in FEATURE_KEYS},
+            # Six places, not four. Policy weights sit near 0.02 and a game
+            # nudges them by less again, so rounding at four would quietly
+            # discard the smaller lessons every time the file is written.
+            'policy': {k: round(self.policy[k], 6) for k in MOVE_FEATURE_KEYS},
             'opponents': self.opponents,
             'book': self.book,
             'history': self.history[-50:],
@@ -514,6 +655,7 @@ class ChessAI:
         """Wipe the brain back to a newborn. Writes immediately unless asked
         not to, so 'reset' means reset even if the process dies next."""
         self.weights = dict(DEFAULT_WEIGHTS)
+        self.policy = dict(DEFAULT_POLICY)
         self.book = {}
         self.record = {'played': 0, 'won': 0, 'lost': 0, 'drawn': 0}
         self.opponents = {}
@@ -686,6 +828,47 @@ class ChessAI:
     # ------------------------------------------------------------------
     #  Move selection
     # ------------------------------------------------------------------
+    # ------------------------------------------------------------------
+    #  Searchless move selection
+    # ------------------------------------------------------------------
+    def policy_temperature(self):
+        """How randomly the learner picks among its scored moves.
+
+        Starts wide because at zero weights every move scores the same and it
+        may as well explore; narrows as games accumulate and the weights start
+        to mean something. Never reaches zero — a policy that stops exploring
+        cannot discover that its current favourite is bad.
+        """
+        return max(0.35, 1.6 - 0.02 * self.record['played'])
+
+    def _policy_pick(self, board, legal):
+        """Score every legal move, sample one, and return what the gradient
+        step will need.
+
+        Sampling from a softmax rather than taking the best move is the
+        exploration mechanism, and it is also what makes the update below a
+        policy gradient rather than a guess: the expected feature vector is the
+        baseline the chosen move is measured against.
+        """
+        feats = [move_features(board, m) for m in legal]
+        scores = [sum(self.policy[k] * f[k] for k in MOVE_FEATURE_KEYS)
+                  for f in feats]
+        temp = self.policy_temperature()
+        top = max(scores)
+        exps = [math.exp((s - top) / temp) for s in scores]      # top subtracted
+        total = sum(exps) or 1.0                                 # for overflow
+        probs = [e / total for e in exps]
+
+        r, acc, idx = self.rng.random(), 0.0, len(legal) - 1
+        for i, p in enumerate(probs):
+            acc += p
+            if r <= acc:
+                idx = i
+                break
+        expected = {k: sum(p * f[k] for p, f in zip(probs, feats))
+                    for k in MOVE_FEATURE_KEYS}
+        return legal[idx], feats[idx], expected
+
     def skill_level(self):
         """Search depth for this game.
 
@@ -754,7 +937,9 @@ class ChessAI:
 
         source = 'search'
         chosen = None
+        extra = None
 
+        # The book is learned too, so both styles consult it.
         if board.ply() <= self.BOOK_MAX_PLY:
             pick = self._book_choice(board, legal)
             if pick:
@@ -766,11 +951,16 @@ class ChessAI:
                     chosen = None
 
         if chosen is None:
-            chosen, _, _ = self.search(board, max_depth=self.skill_level())
-            if chosen is None or chosen not in legal:
-                chosen = self.rng.choice(legal)
+            if self.style == 'learner':
+                chosen, feats, expected = self._policy_pick(board, legal)
+                source = 'policy'
+                extra = {'pf': feats, 'pe': expected}
+            else:
+                chosen, _, _ = self.search(board, max_depth=self.skill_level())
+                if chosen is None or chosen not in legal:
+                    chosen = self.rng.choice(legal)
 
-        self._record_decision(board, chosen, source)
+        self._record_decision(board, chosen, source, extra)
         return chosen.uci()
 
     @staticmethod
@@ -794,7 +984,7 @@ class ChessAI:
         self._trace = []
         self._last_eval = None
 
-    def _record_decision(self, board, move, source):
+    def _record_decision(self, board, move, source, extra=None):
         """Log one of the AI's own decisions, plus the eval of the position it
         was looking at.
 
@@ -811,7 +1001,7 @@ class ChessAI:
         if self._trace and self._trace[-1].get('after') is None:
             self._trace[-1]['after'] = static
 
-        self._trace.append({
+        step = {
             'key': self.book_key(board),
             'uci': move.uci(),
             'ply': board.ply(),
@@ -820,7 +1010,14 @@ class ChessAI:
             'after': None,
             'source': source,
             'features': features(board),
-        })
+        }
+        # A learner also carries the move's own feature vector and the average
+        # over everything it could have played. Those two are what the policy
+        # gradient subtracts, so they have to be captured at decision time —
+        # the alternatives are gone once the move is made.
+        if extra:
+            step.update(extra)
+        self._trace.append(step)
 
     @staticmethod
     def _normalize_result(result):
@@ -886,9 +1083,10 @@ class ChessAI:
             else:
                 self._trace[-1]['after'] = self._trace[-1]['before']
 
-        # --- the two learning passes ---
+        # --- the learning passes ---
         book_touched = self._learn_book(score, winner)
         moved = self._learn_weights(score, winner)
+        policy_moved = self._learn_policy(score, winner)
 
         # --- opponent's opening fingerprint ---
         # Only their first few moves: enough to recognise "this is the
@@ -918,8 +1116,10 @@ class ChessAI:
             'book_positions': len(self.book),
             'book_updated': book_touched,
             'weights_moved': moved,
+            'policy_moved': policy_moved,
+            'style': self.style,
             'updates': self.updates,
-            'depth_next_game': self.skill_level(),
+            'depth_next_game': 0 if self.style == 'learner' else self.skill_level(),
         }
         self.new_game()
         return summary
@@ -961,6 +1161,54 @@ class ChessAI:
             stat[1] += value
             touched += 1
         return touched
+
+    def _learn_policy(self, score, winner=None):
+        """REINFORCE on the linear softmax move policy.
+
+        For a softmax over scores w·f, the gradient of log P(chosen) is
+
+            f(chosen) - E[f]
+
+        where E[f] is the probability-weighted average over the moves it could
+        have played. So the update is
+
+            w += rate * advantage * (f_chosen - f_expected)
+
+        which reads exactly as it behaves: when a move worked out, shift the
+        weights toward whatever made *that* move different from the alternatives
+        it was picked over, and away when it did not. Subtracting the expected
+        vector is what keeps it honest — without that baseline, every feature
+        common to all legal moves would drift upward on any good result, which
+        is a bias, not a lesson.
+
+        Only learners record the vectors, so this is a no-op for searchers.
+        """
+        steps = [s for s in self._trace if 'pf' in s and 'pe' in s]
+        if not steps:
+            return 0
+        moved = {k: 0.0 for k in MOVE_FEATURE_KEYS}
+        for step in steps:
+            local = self._local_signal(step)
+            outcome = self._outcome_for(step, score, winner)
+            advantage = (self.LOCAL_SHARE * local
+                         + (1.0 - self.LOCAL_SHARE) * outcome)
+            if not advantage:
+                continue
+            pf, pe = step['pf'], step['pe']
+            for k in MOVE_FEATURE_KEYS:
+                moved[k] += POLICY_RATE[k] * advantage * (pf[k] - pe[k])
+
+        n = float(len(steps))
+        changed = 0
+        for k in MOVE_FEATURE_KEYS:
+            if not moved[k]:
+                continue
+            lo, hi = POLICY_BOUNDS[k]
+            before = self.policy[k]
+            self.policy[k] = min(hi, max(lo, before + moved[k] / n))
+            if abs(self.policy[k] - before) > 1e-4:
+                changed += 1
+        return changed
 
     def _local_signal(self, step):
         """How the position actually developed over the AI's move and the
@@ -1073,14 +1321,23 @@ class ChessAI:
         favourite = None
         if opp.get('openings'):
             favourite = max(opp['openings'].items(), key=lambda kv: kv[1])[0]
+        learner = self.style == 'learner'
         return {
             'name': self.name,
             'born': self.born,
+            'style': self.style,
             'record': dict(self.record),
             'winRate': pct(self.record['won']),
             'drawRate': pct(self.record['drawn']),
-            'searchDepth': self.skill_level(),
-            'maxDepth': self.max_depth,
+            # A learner has no depth to report; saying 0 rather than omitting it
+            # keeps the shape stable for whatever is rendering this.
+            'searchDepth': 0 if learner else self.skill_level(),
+            'maxDepth': 0 if learner else self.max_depth,
+            'policy': {k: round(self.policy[k], 2) for k in MOVE_FEATURE_KEYS},
+            'policyLearned': {k: round(self.policy[k], 2)
+                              for k in MOVE_FEATURE_KEYS
+                              if abs(self.policy[k]) >= 0.01},
+            'exploration': round(self.policy_temperature(), 2) if learner else 0,
             'bookPositions': len(self.book),
             'bookMoves': sum(len(v) for v in self.book.values()),
             'weightUpdates': self.updates,
@@ -1100,12 +1357,25 @@ class ChessAI:
         message after the game."""
         s = self.stats()
         r = s['record']
-        out = ['%s — %d played: %dW %dL %dD (%.0f%% wins)'
-               % (s['name'], r['played'], r['won'], r['lost'], r['drawn'],
-                  s['winRate']),
-               'Search depth %d of %d · book holds %d positions (%d moves)'
-               % (s['searchDepth'], s['maxDepth'], s['bookPositions'],
-                  s['bookMoves'])]
+        out = ['%s (%s) — %d played: %dW %dL %dD (%.0f%% wins)'
+               % (s['name'], s['style'], r['played'], r['won'], r['lost'],
+                  r['drawn'], s['winRate'])]
+        if s['style'] == 'learner':
+            out.append('No search at all · book holds %d positions (%d moves) '
+                       '· exploration %.2f'
+                       % (s['bookPositions'], s['bookMoves'], s['exploration']))
+            if s['policyLearned']:
+                bits = ', '.join('%s %+.2f' % (k, v) for k, v in
+                                 sorted(s['policyLearned'].items(),
+                                        key=lambda kv: -abs(kv[1]))[:5])
+                out.append('Move policy so far: ' + bits)
+            else:
+                out.append('Move policy is still all zeros — it is picking at '
+                           'random. Give it games (self_play) before judging it.')
+        else:
+            out.append('Search depth %d of %d · book holds %d positions (%d moves)'
+                       % (s['searchDepth'], s['maxDepth'], s['bookPositions'],
+                          s['bookMoves']))
         if s['drift']:
             bits = ', '.join('%s %+.1f' % (k, v) for k, v in
                              sorted(s['drift'].items(), key=lambda kv: -abs(kv[1]))[:4])
@@ -1120,6 +1390,60 @@ class ChessAI:
     # ------------------------------------------------------------------
     #  Offline bootstrap
     # ------------------------------------------------------------------
+    def train_against(self, teacher=None, games=50, max_plies=140,
+                      verbose=False):
+        """Learn by being beaten by something that can see.
+
+        This is how a learner should be bootstrapped, and self_play() is not.
+        Measured over ~2,400 decisions: against another learner, a move that
+        hangs a pawn or more scores -0.070 against -0.028 for a safe move — a
+        gap of only 0.098, because an opponent with no lookahead usually fails
+        to take what you left out. Against a searcher the same comparison is
+        -0.512 against -0.215, a gap of 0.297. Three times the signal, on the
+        one lesson a searchless bot cannot afford to miss.
+
+        The consequence is worth stating plainly: a blind player cannot teach
+        itself not to blunder, because its sparring partner does not punish it.
+        It needs an opponent that does.
+
+        Only this AI learns; the teacher is a throwaway.
+        """
+        if self.style != 'learner':
+            raise ValueError('train_against is for learners; searchers use '
+                             'self_play')
+        if teacher is None:
+            teacher = ChessAI(name='teacher', autoload=False, style='searcher',
+                              think_time=0.05, max_depth=2,
+                              seed=self.rng.randrange(1 << 30))
+            teacher.record['played'] = 40          # skip its warm-up ramp
+        tally = {'games': 0, 'won': 0, 'lost': 0, 'drawn': 0}
+        for i in range(games):
+            board = chess.Board()
+            self.new_game()
+            teacher.new_game()
+            mine = chess.WHITE if i % 2 == 0 else chess.BLACK
+            while not board.is_game_over(claim_draw=True) and board.ply() < max_plies:
+                who = self if board.turn == mine else teacher
+                uci = who.get_move(board)
+                if not uci:
+                    break
+                board.push(chess.Move.from_uci(uci))
+
+            outcome = board.outcome(claim_draw=True)
+            if outcome is None or outcome.winner is None:
+                result, tag = 0.5, 'drawn'
+            elif outcome.winner == mine:
+                result, tag = 1.0, 'won'
+            else:
+                result, tag = 0.0, 'lost'
+            tally[tag] += 1
+            tally['games'] += 1
+            self.learn_from_game(result, final_board=board, opponent='teacher')
+            if verbose and (i + 1) % 10 == 0:
+                print('  %d/%d: %dW %dL %dD' % (i + 1, games, tally['won'],
+                                                tally['lost'], tally['drawn']))
+        return tally
+
     def self_play(self, games=10, think_time=0.05, max_depth=2,
                   max_plies=160, verbose=False):
         """Play the AI against itself to give the weight learning a sample size
@@ -1302,7 +1626,48 @@ def _selftest():
                          'V(s) and the TD target are on different scales' % worst)
     ok += 1
 
+    # 13. A learner really does not search, and still returns legal moves.
+    lrn = ChessAI(data_path=os.path.join(BASE, '_selftest_learner.json'),
+                  autoload=False, seed=11, style='learner')
+    assert all(v == 0.0 for v in lrn.policy.values()), 'a new policy must be blank'
+    for fen in [chess.STARTING_FEN,
+                'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4',
+                'k7/8/8/8/8/8/6q1/7K w - - 0 1']:
+        b = chess.Board(fen)
+        lrn._nodes = 0
+        uci = lrn.get_move(b)
+        assert uci and chess.Move.from_uci(uci) in b.legal_moves, uci
+        assert lrn._nodes == 0, 'a learner searched %d nodes' % lrn._nodes
+    ok += 1
+
+    # 14. The policy gradient moves the right weight in the right direction.
+    #     One decision: the move played captured, the alternatives on average
+    #     did not, and the position improved. `capture` must go up, and the
+    #     features it shared with the alternatives must not move.
+    lrn.policy = dict(DEFAULT_POLICY)
+    blank = dict.fromkeys(MOVE_FEATURE_KEYS, 0.0)
+    chosen = dict(blank); chosen['capture'] = 1.0; chosen['develop'] = 1.0
+    average = dict(blank); average['develop'] = 1.0      # shared, so no lesson
+    lrn._trace = [{'key': 'x', 'uci': 'a1a2', 'ply': 4, 'colour': 'w',
+                   'before': 0.0, 'after': 300.0, 'source': 'policy',
+                   'features': features(chess.Board()),
+                   'pf': chosen, 'pe': average}]
+    lrn.learn_from_game('win', winner='w')
+    assert lrn.policy['capture'] > 0.0, 'capturing well taught it nothing'
+    assert abs(lrn.policy['develop']) < 1e-9, (
+        'a feature shared with the alternatives must not move: %s'
+        % lrn.policy['develop'])
+    ok += 1
+
+    # 15. Style and policy survive a save/load round trip.
+    lrn.save_progress()
+    twin2 = ChessAI(data_path=lrn.data_path, autoload=True, style='learner')
+    assert twin2.style == 'learner'
+    assert abs(twin2.policy['capture'] - lrn.policy['capture']) < 1e-6
+    ok += 1
+
     for path in (ai.data_path, ai.data_path + '.tmp',
+                 lrn.data_path, lrn.data_path + '.tmp',
                  probe.data_path, probe.data_path + '.tmp'):
         if os.path.exists(path):
             os.remove(path)
@@ -1379,7 +1744,10 @@ def main():
     ap = argparse.ArgumentParser(description='Learning chess AI for HomeGames.')
     ap.add_argument('--test', action='store_true', help='run the self-test')
     ap.add_argument('--selfplay', type=int, metavar='N',
-                    help='self-play N games and report')
+                    help='self-play N games and report (for searchers)')
+    ap.add_argument('--spar', type=int, metavar='N',
+                    help='train a learner for N games against a searcher — the '
+                         'right way to bootstrap one, see train_against()')
     ap.add_argument('--play', action='store_true',
                     help='play a game at the terminal as White')
     ap.add_argument('--stats', action='store_true',
@@ -1399,6 +1767,20 @@ def main():
         return
     if args.test:
         _selftest()
+        return
+    if args.spar:
+        path = os.path.join(BASE, 'chess_ai_learner.json')
+        lrn = ChessAI(name='Learner', data_path=path, style='learner')
+        print('Training a searchless learner for %d games against a searcher...'
+              % args.spar)
+        start = time.monotonic()
+        tally = lrn.train_against(games=args.spar, verbose=True)
+        print('\n%d games in %.0fs — %dW %dL %dD'
+              % (tally['games'], time.monotonic() - start,
+                 tally['won'], tally['lost'], tally['drawn']))
+        lrn.save_progress()
+        print('\n' + lrn.progress_report())
+        print('\nBrain written to %s' % path)
         return
     if args.selfplay:
         _demo(args.selfplay, args.think)

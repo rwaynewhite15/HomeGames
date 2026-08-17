@@ -201,13 +201,52 @@ So the strength you feel across your first dozen games is mostly search depth
 elsewhere — a bot that throws away a fifth of its moves is beatable no matter
 how good its book gets.
 
+### Two kinds of chess bot
+
+Each bot carries a **style** alongside the `blunder` and `noise` it is born
+with:
+
+- **searcher** — alpha-beta with quiescence, 2–4 ply. This is what makes the
+  default opponent respectable, and it is doing far more work than the learning
+  is. Measured: the same bot with quiescence removed, at identical depth and
+  with the identical evaluation, loses 12–0.
+- **learner** — no search whatsoever. It scores each legal move on a dozen
+  readable facts (what it takes, what it leaves hanging, whether the square is
+  defended, development, centralisation) and samples from a softmax over those
+  scores. The weights start at **zero** — nothing is hand-tuned, so anything it
+  ends up believing, it worked out. Learning is REINFORCE: shift the weights
+  toward what made the played move different from the alternatives it was
+  picked over, scaled by how the game went.
+
+Learners exist to be measured. They join the roster at the default rating and
+their ELO against the searchers is the only honest answer to "is the learning
+working". Existing bots keep their style and their ratings — a rating earned by
+searching would mean nothing after a silent conversion.
+
+**Bootstrap a learner against a searcher, not against itself.** This matters
+more than it sounds. Over ~2,400 measured decisions, a move that hangs a pawn
+or more scores −0.070 against another learner versus −0.028 for a safe move — a
+gap of 0.098. Against a searcher the same gap is 0.297, three times larger. An
+opponent with no lookahead usually fails to take what you left hanging, so a
+blind player cannot teach itself not to blunder. It needs an opponent that
+punishes it.
+
+```
+python chess_ai.py --spar 300      # learner vs a searcher; the right bootstrap
+```
+
+Its known ceiling: it cannot see a recapture, so it plays what amounts to very
+well-informed one-move chess. It will not beat the searchers. The interesting
+question is how close it gets, and the leaderboard answers that.
+
 Brains live one file per bot in `chess_brains/`. Back up the folder, or reset
 one (or all) from `POST /api/chess/reset`. `chess_ai.py` also runs standalone:
 
 ```
 python chess_ai.py --test          # self-test
 python chess_ai.py --play          # play it at the terminal
-python chess_ai.py --selfplay 200  # bootstrap the evaluation weights
+python chess_ai.py --selfplay 200  # bootstrap a searcher's evaluation weights
+python chess_ai.py --spar 300      # bootstrap a learner against a searcher
 python chess_ai.py --stats         # what it has learned so far
 ```
 

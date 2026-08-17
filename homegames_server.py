@@ -1351,7 +1351,8 @@ class Chess:
                          'kind': s.get('kind', 'human'),
                          'profile': s.get('profile'),
                          'blunder': (0.0 if s.get('reference')
-                                     else float(s.get('blunder') or 0.0))}
+                                     else float(s.get('blunder') or 0.0)),
+                         'style': s.get('style') or 'searcher'}
                         for s in seats[:2]]
         self.board = chesslib.Board()
         self.over = False
@@ -1378,7 +1379,8 @@ class Chess:
             self.ai[i] = ChessAI(name=p['name'],
                                  data_path=chess_brain_path(p['profile']),
                                  opponent=other, think_time=self.THINK_TIME,
-                                 max_depth=self.depth_ceiling(p['blunder']))
+                                 max_depth=self.depth_ceiling(p['blunder']),
+                                 style=p['style'])
 
     @staticmethod
     def depth_ceiling(blunder):
@@ -1960,23 +1962,71 @@ def brain(pid, game):
     return p.setdefault('brains', {}).setdefault(game, blank_brain(game))
 
 
+# Bots that play chess without any search at all, choosing from a learned move
+# policy instead. Kept alongside the searchers rather than replacing them: the
+# whole question about a learner is whether it is getting better, and that only
+# has an answer if there is something rated to measure it against.
+CHESS_LEARNERS = 2
+
+
+def mint_profile(name, share, style='searcher'):
+    """One bot. `share` spreads the handicaps across the roster.
+
+    A learner gets almost no blunder rate. Its weakness is already structural —
+    it cannot see a recapture — and stacking a random-move handicap on top
+    would just make its rating measure the dice instead of the learning.
+    """
+    pid = 'ai_' + uuid.uuid4().hex[:8]
+    learner = style == 'learner'
+    return pid, {
+        'id': pid, 'name': name, 'style': style,
+        'blunder': 0.02 if learner else round(0.02 + 0.33 * share, 3),
+        'noise': 0.2 if learner else round(0.2 + 2.6 * share, 2),
+        'brains': {g: blank_brain(g) for g in BRAINS},
+        'born': iso_now()}
+
+
 def new_roster():
     """Mint a fresh field of bots: random names, and blunder rates spread
     across the range so the ratings have something real to separate."""
-    names = random.sample(AI_NAME_POOL, AI_ROSTER_SIZE)
+    total = AI_ROSTER_SIZE + CHESS_LEARNERS
+    names = random.sample(AI_NAME_POOL, total)
     spread = [i / float(AI_ROSTER_SIZE - 1) for i in range(AI_ROSTER_SIZE)]
     random.shuffle(spread)
+    styles = (['searcher'] * AI_ROSTER_SIZE) + (['learner'] * CHESS_LEARNERS)
+    shares = spread + [0.0] * CHESS_LEARNERS
     profiles, order = {}, []
-    for n, share in zip(names, spread):
-        pid = 'ai_' + uuid.uuid4().hex[:8]
-        profiles[pid] = {
-            'id': pid, 'name': n,
-            'blunder': round(0.02 + 0.33 * share, 3),
-            'noise': round(0.2 + 2.6 * share, 2),
-            'brains': {g: blank_brain(g) for g in BRAINS},
-            'born': iso_now()}
+    for n, share, style in zip(names, shares, styles):
+        pid, prof = mint_profile(n, share, style)
+        profiles[pid] = prof
         order.append(pid)
     return {'version': 3, 'profiles': profiles, 'order': order}
+
+
+def ensure_learners(data):
+    """Top the roster up with searchless bots, without touching what is there.
+
+    Existing bots keep their style and their ratings: converting one would
+    silently invalidate an ELO earned by a completely different way of playing.
+    New learners simply join at the default rating and earn their own.
+    """
+    have = sum(1 for p in data['profiles'].values()
+               if p.get('style') == 'learner')
+    if have >= CHESS_LEARNERS:
+        return 0
+    taken = set(p['name'] for p in data['profiles'].values())
+    pool = [n for n in AI_NAME_POOL if n not in taken]
+    added = 0
+    for _ in range(CHESS_LEARNERS - have):
+        if not pool:
+            break
+        name = random.choice(pool)
+        pool.remove(name)
+        pid, prof = mint_profile(name, 0.0, 'learner')
+        data['profiles'][pid] = prof
+        data['order'].append(pid)
+        added += 1
+    return added
 
 
 def load_profiles():
@@ -1999,6 +2049,9 @@ def load_profiles():
         p.setdefault('name', pid)
         p.setdefault('blunder', 0.1)
         p.setdefault('noise', 1.0)
+        # Anything minted before styles existed searched, and its rating was
+        # earned that way. Leave it a searcher.
+        p.setdefault('style', 'searcher')
         p.setdefault('born', iso_now())
         # v2 kept one Quixx brain at the top level; move it under brains.quixx
         # so the thousands of games already trained into it are not thrown away
@@ -2029,6 +2082,10 @@ def load_profiles():
                 for k in [k for k in d if k not in spec['keys']]:
                     del d[k]
     designate_reference(data, 'mancala')
+    if CHESS_OK:
+        added = ensure_learners(data)
+        if added and not fresh:
+            print('  [ai] added %d searchless chess bot(s) to the roster' % added)
     data['version'] = 3
     PROFILES = data
     save_profiles()
@@ -2077,7 +2134,8 @@ def profile_seat(pid, name=None, game='quixx'):
     return {'id': 'ai:' + pid, 'name': name or p['name'], 'kind': 'ai',
             'profile': pid, 'weights': dict(b.get('weights') or {}),
             'reference': bool(b.get('reference')),
-            'blunder': p['blunder'], 'noise': p['noise']}
+            'blunder': p['blunder'], 'noise': p['noise'],
+            'style': p.get('style', 'searcher')}
 
 
 def mutate(w, game='quixx'):
@@ -2311,6 +2369,7 @@ def profiles_payload():
                           'weights': b.get('weights') or {}}
         q = brains.get('quixx', {})
         out.append({'id': p['id'], 'name': p['name'],
+                    'style': p.get('style', 'searcher'),
                     'elos': elos, 'plays': played, 'brains': brains,
                     'elo': elos.get('quixx'), 'played': played.get('quixx', 0),
                     'generation': q.get('generation', 0), 'trained': q.get('trained', 0),
@@ -2780,8 +2839,10 @@ class Handler(BaseHTTPRequestHandler):
                 for p in roster():
                     ai = ChessAI(name=p['name'],
                                  data_path=chess_brain_path(p['id']),
-                                 max_depth=Chess.depth_ceiling(p['blunder']))
+                                 max_depth=Chess.depth_ceiling(p['blunder']),
+                                 style=p.get('style', 'searcher'))
                     out.append({'profile': p['id'], 'name': p['name'],
+                                'style': p.get('style', 'searcher'),
                                 'stats': ai.stats()})
                 self.send_json({'ok': True, 'bots': out})
                 return
@@ -2795,7 +2856,8 @@ class Handler(BaseHTTPRequestHandler):
                 for p in targets:
                     ChessAI(name=p['name'],
                             data_path=chess_brain_path(p['id']),
-                            max_depth=Chess.depth_ceiling(p['blunder'])).reset()
+                            max_depth=Chess.depth_ceiling(p['blunder']),
+                            style=p.get('style', 'searcher')).reset()
                 self.send_json({'ok': True,
                                 'reset': [p['name'] for p in targets]})
                 return
