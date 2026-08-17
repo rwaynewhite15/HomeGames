@@ -235,9 +235,30 @@ punishes it.
 python chess_ai.py --spar 300      # learner vs a searcher; the right bootstrap
 ```
 
-Its known ceiling: it cannot see a recapture, so it plays what amounts to very
-well-informed one-move chess. It will not beat the searchers. The interesting
-question is how close it gets, and the leaderboard answers that.
+The difference that makes, from zero weights, same code, only the opponent
+changed:
+
+| feature   | 400 games of self-play | 300 games against a searcher |
+|-----------|------------------------|------------------------------|
+| `hanging` | **+0.022** (wrong sign)| **-0.490** (correct, largest)|
+| `capture` | +0.718                 | +0.302                       |
+| `centre`  | +0.343                 | +0.257                       |
+| `develop` | +0.063                 | +0.209                       |
+
+Taught by something that punishes blunders, it works out for itself that
+leaving a piece takeable is the worst thing it can do. Taught by another blind
+bot, it concludes the opposite.
+
+That sparring run went 0W-297L-3D against a depth-2 searcher, which is the
+honest measure of where a learner starts. Its ceiling is structural: it cannot
+see a recapture, so it plays very well-informed one-move chess and will not
+beat the searchers. How close it gets is the interesting question, and the
+leaderboard answers it.
+
+Two features stay near zero and that is expected. `defended` is redundant —
+`hanging` already scales its risk down when the square is covered, so there is
+no independent signal left for it. `promote` needs endgames a learner rarely
+reaches while it is still losing almost every game.
 
 Brains live one file per bot in `chess_brains/`. Back up the folder, or reset
 one (or all) from `POST /api/chess/reset`. `chess_ai.py` also runs standalone:
