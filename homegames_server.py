@@ -1793,16 +1793,38 @@ def chess_seed_elo(pid):
     return chess_calibrated_elo(PROFILES['profiles'].get(pid)) if pid else None
 
 
-def chess_rated_bots():
-    """(record, calibrated Elo) for every AI with a chess rating we can place."""
+def chess_bot_is_fixed(pid):
+    """Is this bot's strength settled at birth, or is it still learning?
+
+    A searcher's ceiling is its depth cap and its blunder rate, neither of
+    which it can learn around — the evaluation weights move by rounding errors
+    next to that, so its measured rating stays true and can be used to hold the
+    scale. A learner is the opposite: its policy starts at zero and its rating
+    against the searchers is the only honest read on whether the learning is
+    working. Pinning that would erase the measurement it exists to make.
+    """
+    prof = PROFILES['profiles'].get(pid) if pid else None
+    return bool(prof) and prof.get('style', 'searcher') != 'learner'
+
+
+def chess_rated_bots(fixed_only=False):
+    """(player, record, calibrated Elo) for every AI with a chess rating.
+
+    `fixed_only` keeps just the bots whose strength does not move, which are
+    the ones the scale can be hung from.
+    """
     out = []
     for pl in STATS['players'].values():
         if not pl.get('ai'):
             continue
         rec = (pl.get('games') or {}).get('chess')
-        target = chess_seed_elo(pl.get('profile')) if rec else None
-        if target is not None:
-            out.append((pl, rec, target))
+        pid = pl.get('profile')
+        target = chess_seed_elo(pid) if rec else None
+        if target is None:
+            continue
+        if fixed_only and not chess_bot_is_fixed(pid):
+            continue
+        out.append((pl, rec, target))
     return out
 
 
@@ -1819,15 +1841,23 @@ def anchor_chess_ratings():
     ranking changes and the spread they earned against each other survives
     intact — what cannot survive is the field as a whole wandering off the
     scale it was measured on.
+
+    The searchers are the scale, and only they are read and only they are
+    moved. A learner is left alone on purpose: when it takes rating off a
+    searcher what that means is that the learner is stronger than we thought,
+    not that the searcher got worse, so the searcher goes back to its measured
+    value and the learner keeps what it won. Everything else — the learners and
+    the people — then floats against a scale that stays put, which is the whole
+    point of having one.
     """
-    rated = chess_rated_bots()
-    if not rated:
+    fixed = chess_rated_bots(fixed_only=True)
+    if not fixed:
         return False
-    drift = (sum(rec['elo'] for _, rec, _ in rated)
-             - sum(t for _, _, t in rated)) / len(rated)
+    drift = (sum(rec['elo'] for _, rec, _ in fixed)
+             - sum(t for _, _, t in fixed)) / len(fixed)
     if abs(drift) < CHESS_ANCHOR_TOLERANCE:
         return False
-    for _, rec, _ in rated:
+    for _, rec, _ in fixed:
         rec['elo'] = round(rec['elo'] - drift, 1)
     return True
 
@@ -1839,12 +1869,26 @@ def recalibrate_chess_ratings():
     ordering is informative and their values are not. People are left exactly
     as they are: a person's rating is theirs, and it becomes meaningful on its
     own the moment the bots it was measured against are correct.
+
+    Searchers are set to their measured value outright. Learners are shifted by
+    the same amount the searchers moved, rather than reset: a learner that has
+    sparred its way up deserves to keep the ground it took, and resetting it to
+    the rating of an untrained one would throw that away.
     """
     moved = []
+    fixed = chess_rated_bots(fixed_only=True)
+    shift = 0.0
+    if fixed:
+        shift = sum(target - rec['elo'] for _, rec, target in fixed) / len(fixed)
     for pl, rec, target in chess_rated_bots():
         before = rec['elo']
-        rec['elo'] = round(target, 1)
-        rec['calibrated'] = True
+        if chess_bot_is_fixed(pl.get('profile')):
+            rec['elo'] = round(target, 1)
+            rec['calibrated'] = True
+        elif rec.get('played'):
+            rec['elo'] = round(before + shift, 1)
+        else:
+            rec['elo'] = round(target, 1)
         if abs(before - rec['elo']) >= 0.1:
             moved.append((pl['name'], before, rec['elo']))
     STATS['chessCalibration'] = CHESS_CALIBRATION_VERSION
@@ -1920,10 +1964,15 @@ def record_result(summary):
             # walking the rating to a number we were handed for free — and for
             # a bot that is rarely picked, never getting there at all.
             if game == 'chess' and ps[i].get('kind') == 'ai':
-                seed = chess_seed_elo(ps[i].get('profile'))
+                pid = ps[i].get('profile')
+                seed = chess_seed_elo(pid)
                 if seed is not None:
                     rec['elo'] = round(seed, 1)
-                    rec['calibrated'] = True
+                    # A learner is seeded at the strength an untrained one was
+                    # measured at, but not marked calibrated: it is meant to
+                    # climb from there, so it keeps the faster K and stays
+                    # provisional until its rating has caught up with it.
+                    rec['calibrated'] = chess_bot_is_fixed(pid)
         rec = normalize_record(rec)
         pl['games'][game] = rec
         recs.append(rec)
