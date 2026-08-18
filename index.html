@@ -1565,22 +1565,45 @@ let chessPrevEval=null;
 function chessToggleComm(){
   chessCommOn=!chessCommOn;
   localStorage.setItem('hgChessComm',chessCommOn?'1':'0');
-  if(!chessCommOn){chessComm=[];if(window.speechSynthesis)speechSynthesis.cancel();}
+  if(!chessCommOn){chessComm=[];chessHush();}
   renderRoom();
 }
 function chessToggleSpeak(){
   chessSpeakOn=!chessSpeakOn;
   localStorage.setItem('hgChessSpeak',chessSpeakOn?'1':'0');
-  if(!chessSpeakOn&&window.speechSynthesis)speechSynthesis.cancel();
+  if(!chessSpeakOn)chessHush();
   renderRoom();
 }
-function chessSay(text){
+/* Stop anything queued or being spoken, including a line not yet handed over. */
+let chessSayTimer=null;
+function chessHush(){
+  if(chessSayTimer){clearTimeout(chessSayTimer);chessSayTimer=null;}
+  if(window.speechSynthesis)speechSynthesis.cancel();
+}
+/* Say one line, replacing whatever is still being spoken.
+
+   The Web Speech API queues, which is the wrong default here: a bot replies in
+   well under the time it takes to read a move aloud, so the queue only grows
+   and the voice ends up describing a position two or three moves behind the
+   board. Cancelling first keeps what you hear tied to what you are looking at.
+
+   `queue` is for the one line that should not interrupt — the result, which
+   follows the move that caused it and would otherwise cut it off mid-word. */
+function chessSay(text,queue){
+  if(!queue)chessHush();
   if(!chessSpeakOn||!window.speechSynthesis)return;
-  try{
-    const u=new SpeechSynthesisUtterance(text);
-    u.rate=1.05;u.pitch=1;u.volume=0.9;
-    speechSynthesis.speak(u);
-  }catch(e){/* a voice that will not speak is not worth an error */}
+  const start=()=>{
+    if(!chessSpeakOn)return;          // toggled off while we waited
+    try{
+      const u=new SpeechSynthesisUtterance(text);
+      u.rate=1.05;u.pitch=1;u.volume=0.9;
+      speechSynthesis.speak(u);
+    }catch(e){/* a voice that will not speak is not worth an error */}
+  };
+  if(queue){start();return;}
+  // Chrome drops an utterance handed to speak() in the same tick as a cancel(),
+  // so the replacement goes in on the next one.
+  chessSayTimer=setTimeout(()=>{chessSayTimer=null;start();},0);
 }
 const C_PIECE_NAME={K:'King',Q:'Queen',R:'Rook',B:'Bishop',N:'Knight',P:'Pawn'};
 /* SAN into words: "Nxe5+" -> "Knight takes e5, check". `forSpeech` splits the
@@ -1641,6 +1664,13 @@ function chessCommentate(g,me){
   }
   chessCommPly=hist.length;
 
+  // Only the move now on the board is read out. When several arrive at once —
+  // a backgrounded tab catching up, or your move and the reply landing in the
+  // same update — the earlier ones are already written in the panel, and
+  // reading the backlog aloud is precisely how the voice falls behind the
+  // position it is describing.
+  const say=spoken.length?[spoken[spoken.length-1]]:[];
+
   // The swing covers everything that happened since the last update — usually
   // your move and the reply together — so it is reported as the exchange it
   // is rather than pinned on one move it may not belong to.
@@ -1652,9 +1682,9 @@ function chessCommentate(g,me){
     else if(swing<=-110){note='That run of moves went their way.';tone='bad';}
     else if(swing>=250) {note='You come out of that up material.';tone='good';}
     else if(swing>=110) {note='That went your way.';tone='good';}
-    if(note){chessPush(note,tone);spoken.push(note);}
+    if(note){chessPush(note,tone);say.push(note);}
   }
-  if(spoken.length)chessSay(spoken.join('. '));
+  if(say.length)chessSay(say.join('. '));
 }
 function chessPush(text,tone){
   chessComm.push({text:text,tone:tone||''});
@@ -1759,6 +1789,10 @@ function renderChess(g,me,body){
   if(!(g.history||[]).length&&!g.over&&chessAnimFen!==null&&chessAnimFen!==g.fen){
     chessComm=[];chessCommFen=null;chessPrevEval=null;chessCommPly=0;
     chessAnimFen=null;chessSoundFen=null;
+    // The last game's result is still being read out at this point, and the
+    // opening line of the new one does not interrupt it — a fresh board is
+    // written, not spoken. So silence it here instead.
+    chessHush();
   }
 
   let h='<div class="dice-tray">';
@@ -1918,7 +1952,9 @@ function renderChess(g,me,body){
     setTimeout(()=>chessPlay(drawn?'draw':(won===false?'lose':'win')),280);
     if(chessCommOn){
       chessPush(g.reason||'Game over.',drawn?'':(won===false?'bad':'good'));
-      chessSay(g.reason||'Game over.');
+      // Queued, not interrupting: this follows the move that ended the game,
+      // and cutting "…checkmate" off to say so would be the wrong trade.
+      chessSay(g.reason||'Game over.',true);
     }
   }
 }
