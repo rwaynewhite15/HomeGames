@@ -2565,6 +2565,37 @@ def calibrate(games=90, game='quixx'):
 # reports through the same TRAINING dict so the panel needs no changes.
 CHESS_TRAIN_GAMES = 20      # games a bot gets per round
 CHESS_TRAIN_THINK = 0.04    # seconds per move while training, not the 0.6 of a real game
+# A sparring teacher gets longer, and only the teacher. The search is
+# time-budgeted, so at 0.04s it reaches depth 2 in the opening and **depth 1**
+# in a middlegame — the same for every bot on the roster, whatever its ceiling.
+# That made chess_teacher_profile()'s pick of "the sharpest searcher on the
+# roster" decide nothing at all: at that budget the 1381 bot and the 360 bot
+# play identically.
+#
+# Measured depth against think time, per position type, on a desktop:
+#
+#   think   opening  midgame  complex
+#   0.04    2        1        1
+#   0.08    2        2        1
+#   0.12    3        2        1
+#   0.50    4        3        2
+#
+# 0.25 rather than the 0.12 where that curve first turns, because the budget is
+# wall-clock and the Pi is several times slower per node: the same 0.12s that
+# reaches depth 2 in a middlegame here may still be depth 1 there, which is the
+# exact failure being fixed. It is also the value nearest the one that measured
+# best in a four-way comparison of teachers, though that result was 0.9 sigma
+# and is a tiebreak rather than evidence.
+#
+# What this does not buy: a middlegame at 0.25s is depth 2 whatever the
+# teacher's ceiling, so chess_teacher_profile() still only separates the roster
+# in the opening. Sharper teachers than that need a budget that makes a
+# training round noticeably slow.
+#
+# Deliberately not applied to searcher self-play, which keeps CHESS_TRAIN_THINK:
+# self_play() is explicit that volume of gradient steps is the point there and
+# quality of play is not, so slowing it down buys nothing.
+CHESS_TEACH_THINK = 0.25
 
 
 def chess_bot_busy(pid):
@@ -2615,7 +2646,7 @@ def chess_train_round(pid):
         teacher = None
         if tp:
             teacher = ChessAI(name=tp['name'], autoload=False, style='searcher',
-                              think_time=CHESS_TRAIN_THINK,
+                              think_time=CHESS_TEACH_THINK,
                               max_depth=Chess.depth_ceiling(tp['blunder']))
             teacher.record['played'] = 40        # skip its warm-up ramp
         t = ai.train_against(teacher=teacher, games=CHESS_TRAIN_GAMES)

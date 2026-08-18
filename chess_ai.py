@@ -1420,8 +1420,12 @@ class ChessAI:
             raise ValueError('train_against is for learners; searchers use '
                              'self_play')
         if teacher is None:
+            # 0.25s, not the 0.05 this used to get. The search is
+            # time-budgeted, so at 0.05 it reaches depth 1 in a middlegame
+            # whatever its ceiling says — and a teacher is only worth having
+            # for the moves it punishes.
             teacher = ChessAI(name='teacher', autoload=False, style='searcher',
-                              think_time=0.05, max_depth=2,
+                              think_time=0.25, max_depth=3,
                               seed=self.rng.randrange(1 << 30))
             teacher.record['played'] = 40          # skip its warm-up ramp
         tally = {'games': 0, 'won': 0, 'lost': 0, 'drawn': 0}
