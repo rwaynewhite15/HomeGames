@@ -1691,8 +1691,24 @@ HISTORY_MAX = 100     # most recent finished games kept in the file
 # evaluation or depth_ceiling() changes. A stale table is worse than none,
 # because it reads as authoritative.
 CHESS_CALIBRATION_VERSION = 1
-CHESS_ELO_SEARCHER = []   # (blunder rate, measured Elo), weakest last
-CHESS_ELO_LEARNER = None  # searchless, so it has no depth to hold it up
+# (blunder rate, measured Elo), weakest last. The blunder rates are exactly the
+# five new_roster() mints; the depth each implies is in the comment.
+CHESS_ELO_SEARCHER = [
+    (0.020, 1381),        # depth 4 — 20-13-7 against Stockfish at 1320
+    (0.103, 1250),        # depth 4 —  9-15-6 against Stockfish at 1320
+    (0.185, 850),         # depth 3 —  2-37-1 against Stockfish at 1320
+    (0.268, 538),         # depth 3 — placed against the 1-ply reference
+    (0.350, 360),         # depth 2 — placed against the 1-ply reference
+]
+# A learner with nothing learned yet is a random mover, and not approximately:
+# DEFAULT_POLICY is all zeros, so every legal move scores zero, so the softmax
+# it samples from is uniform. Measured at 0.512 against a random mover over 40
+# games, which is the same thing said out loud. Hence the floor of the scale.
+#
+# This is a *seed*, not a verdict. Learners are never pinned — see
+# chess_bot_is_fixed() — so a learner that spars its way up keeps every point
+# it takes, and its rating climbing off this floor is the whole measurement.
+CHESS_ELO_LEARNER = 0
 # How far the bot pool's centre may drift before it is pulled back. Not zero:
 # small movements are ordinary rating traffic and snapping every one of them
 # back would rewrite the file after every game for no visible gain.

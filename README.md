@@ -272,6 +272,61 @@ Two features stay near zero and that is expected. `defended` is redundant —
 no independent signal left for it. `promote` needs endgames a learner rarely
 reaches while it is still losing almost every game.
 
+### Chess ratings are measured
+
+Everywhere else the ELO beside a bot's name is earned in a closed pool, which
+settles who is stronger without ever establishing what any of them is worth.
+Chess is the one game here with an outside yardstick, so its bots carry a
+rating that was measured rather than accumulated:
+
+| bot | blunder | depth | ELO | how |
+|-----|---------|-------|-----|-----|
+| 1st | 0.020 | 4 | **1381** | 20-13-7 vs Stockfish 16 at 1320 |
+| 2nd | 0.103 | 4 | **1250** | 9-15-6 vs Stockfish 16 at 1320 |
+| 3rd | 0.185 | 3 | **850** | 2-37-1 vs Stockfish 16 at 1320 |
+| 4th | 0.268 | 3 | **538** | placed against a 1-ply reference |
+| 5th | 0.350 | 2 | **360** | placed against a 1-ply reference |
+| learner | 0.020 | — | **0** | 0.512 vs a random mover |
+
+Bots seed at these values instead of 1200, and the searchers' centre of mass is
+held there — every bot shifts by the same amount, so rankings and the spread
+they earned survive, but the field as a whole cannot wander off the scale. Your
+own rating is never touched by any of it. Re-measure with
+`python tools/chess_calibration.py` if the search, the evaluation or
+`depth_ceiling()` changes.
+
+**A learner starts at zero because it really is a random mover.** Not
+approximately: `DEFAULT_POLICY` is all zeros, so every legal move scores zero
+and the softmax it samples from is uniform. Measured at 0.512 against a random
+mover, which is the same statement. That is a seed and not a verdict — learners
+are never pinned, so a learner sparring its way up off the floor keeps every
+point it takes, and that climb is the whole measurement.
+
+**The bots' results against each other do not predict their results against
+you.** The top two searchers share a depth ceiling and differ only in blunder
+rate, and that pairing finished **16-0** — while against Stockfish the same two
+are 131 points apart, which predicts 0.32. Two near-identical engines make the
+blunder rate the only variable in the game, so it decides nearly every one. A
+person is a *different* opponent, and against a different opponent the gap is
+much smaller. The measured numbers describe the game you will actually get.
+
+Which is also why the difficulty ladder is steeper than it looks. A blunder
+costs a few points at Quixx and costs the game at chess, so spreading
+`blunder` from 0.02 to 0.35 across five bots does not produce five difficulty
+levels — it produces two playable opponents and three that hang pieces. Handing
+Stockfish itself a 20% random-move rate cost it roughly 600 points.
+
+Two calibration methods failed before one worked, and both are recorded in
+`tools/chess_calibration.py` because both look obviously correct until measured.
+Chaining rung to rung saturates, for the reason above. Handicapping Stockfish
+with random moves makes it erratic rather than weak — brilliant play punctuated
+by free pieces — and nothing rates consistently against it: two rungs with
+known ratings disagreed by 476 points about the same reference. Depth-limited
+Stockfish is properly transitive but cannot be made weak enough, since even a
+1-ply search rates about 1230 on its evaluation alone. What works is a
+hand-built deterministic reference, rated against a rung Stockfish has already
+placed.
+
 Brains live one file per bot in `chess_brains/`. Back up the folder, or reset
 one (or all) from `POST /api/chess/reset`. `chess_ai.py` also runs standalone:
 
@@ -296,16 +351,20 @@ score, average finishing place, total penalties, current/best win streak, and a
 per-variant breakdown. The file also keeps the last 100 results with the ELO
 change for each.
 
-- Everyone starts at **1200**. K-factor is **24** once a rating has settled,
+- Everyone starts at **1200**, except chess bots, which start at the rating
+  their configuration was **measured** at — see [Chess ratings are
+  measured](#chess-ratings-are-measured). K-factor is **24** once a rating has settled,
   but **48** for a player's first 30 games, shown as `?` on the leaderboard.
   Without that, ratings across the two populations never meet: the bots play
   thousands of games against each other while a person plays a handful a week,
   so a human's rating crawls while the bot pool drifts. Each side moving at its
   own K means a game is no longer strictly zero-sum — the usual trade for
   letting a new rating find its level in a few games instead of a hundred.
-- **A bot's rating is only comparable to yours if you have actually played it.**
-  Self-play keeps the bots ranked correctly against *each other*, but the pool's
-  level against humans is anchored only by the games you play against them.
+- **Outside chess, a bot's rating is only comparable to yours if you have
+  actually played it.** Self-play keeps the bots ranked correctly against *each
+  other*, but the pool's level against humans is anchored only by the games you
+  play against them. Chess is the exception: its bots are measured against an
+  outside engine, so their numbers mean something before you sit down.
 - With 3–4 seats, ratings are a **pairwise round robin** — every seat is scored
   against every other and the K-factor is split between those matchups. Ratings
   stay zero-sum, and a 2-player game behaves exactly as it always did.
