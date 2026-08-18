@@ -1663,6 +1663,41 @@ ELO_K_NEW = 48.0
 ELO_PROVISIONAL = 30  # games before a rating stops being provisional
 HISTORY_MAX = 100     # most recent finished games kept in the file
 
+# ---- Chess rating calibration ----------------------------------------
+# ELO_START is where a rating begins, not where it belongs. Almost every game a
+# bot plays is against another bot, and a closed pool only ever settles who is
+# stronger — never what any of them is worth. The lobby bills that number as
+# the difficulty ("pick a 1350 bot for a hard game"), so it has to mean
+# something outside this house, and left to itself it does not.
+#
+# Chess is the one game here with a real yardstick, so these are measured
+# rather than assumed: each configuration played Stockfish 16 under
+# UCI_LimitStrength at a known Elo, seated exactly as the server seats it — the
+# 0.6s think budget and the blunder wrapper in Chess.bot_step(), not the engine
+# on its own.
+#
+# Most of the roster is far below Stockfish's 1320 floor and scores nothing
+# against it, and a 0-16 tells you only "weaker". Those rungs are placed
+# against a ladder of *handicapped* Stockfishes instead — the same engine under
+# a known random-move rate, each one rated by playing the reference above it —
+# so every bot is read off an opponent close enough to resolve it. Chaining bot
+# to bot does not work here: the top two searchers share a depth ceiling and
+# differ only in blunder rate, and that alone was worth a 16-0 sweep.
+#
+# The other games have no equivalent anchor — "1200 at Quixx" means nothing
+# outside this app — so this deliberately covers chess only.
+#
+# Re-measure with tools/chess_calibration.py whenever the search, the
+# evaluation or depth_ceiling() changes. A stale table is worse than none,
+# because it reads as authoritative.
+CHESS_CALIBRATION_VERSION = 1
+CHESS_ELO_SEARCHER = []   # (blunder rate, measured Elo), weakest last
+CHESS_ELO_LEARNER = None  # searchless, so it has no depth to hold it up
+# How far the bot pool's centre may drift before it is pulled back. Not zero:
+# small movements are ordinary rating traffic and snapping every one of them
+# back would rewrite the file after every game for no visible gain.
+CHESS_ANCHOR_TOLERANCE = 15.0
+
 # Players are keyed by lowercased name: client ids are per-session, names are
 # what actually persists between visits on a home network.
 STATS = {'version': STATS_VERSION, 'updated': None, 'players': {}, 'history': []}
@@ -1681,7 +1716,12 @@ def blank_record():
     return {'elo': ELO_START, 'played': 0, 'wins': 0, 'losses': 0, 'ties': 0,
             'forfeits': 0, 'pointsFor': 0, 'pointsAgainst': 0, 'bestScore': 0,
             'penalties': 0, 'streak': 0, 'bestStreak': 0, 'placeSum': 0,
-            'seatsSum': 0, 'variants': {}}
+            'seatsSum': 0, 'variants': {},
+            # Set when the rating came from a measurement rather than from
+            # ELO_START. Such a rating is not provisional on game one: it is
+            # already where it belongs, and the faster K exists to walk a guess
+            # to its level, not to walk a measurement away from it.
+            'calibrated': False}
 
 
 def normalize_record(rec):
@@ -1722,6 +1762,94 @@ def save_stats():
 
 def elo_expected(a, b):
     return 1.0 / (1.0 + 10.0 ** ((b - a) / 400.0))
+
+
+def chess_calibrated_elo(prof):
+    """What this bot's configuration was measured at, or None if unrated.
+
+    Interpolated on the blunder rate, because that single number drives both
+    knobs that decide a chess bot's strength: Chess.depth_ceiling() reads it
+    for the search cap, and Chess.bot_step() rolls against it for random moves.
+    A bot between two measured rungs sits between their ratings.
+    """
+    if not prof or not CHESS_ELO_SEARCHER:
+        return None
+    if prof.get('style', 'searcher') == 'learner':
+        return CHESS_ELO_LEARNER
+    b = float(prof.get('blunder') or 0.0)
+    pts = CHESS_ELO_SEARCHER
+    if b <= pts[0][0]:
+        return float(pts[0][1])
+    if b >= pts[-1][0]:
+        return float(pts[-1][1])
+    for (b0, e0), (b1, e1) in zip(pts, pts[1:]):
+        if b0 <= b <= b1:
+            return e0 + (e1 - e0) * (b - b0) / (b1 - b0)
+    return None
+
+
+def chess_seed_elo(pid):
+    """Calibrated rating for one profile id, or None if it has no entry."""
+    return chess_calibrated_elo(PROFILES['profiles'].get(pid)) if pid else None
+
+
+def chess_rated_bots():
+    """(record, calibrated Elo) for every AI with a chess rating we can place."""
+    out = []
+    for pl in STATS['players'].values():
+        if not pl.get('ai'):
+            continue
+        rec = (pl.get('games') or {}).get('chess')
+        target = chess_seed_elo(pl.get('profile')) if rec else None
+        if target is not None:
+            out.append((pl, rec, target))
+    return out
+
+
+def anchor_chess_ratings():
+    """Hold the bot pool's centre of mass on the measured scale.
+
+    The bots swap far more rating between themselves than they ever do with a
+    person, and those games are not quite zero-sum: ELO_K_NEW means a
+    provisional bot takes more from a settled one than it gives back. Left
+    alone the whole field slides, and a number that slides is not a difficulty
+    label.
+
+    Only the centre is held. Every bot moves by the same amount, so nobody's
+    ranking changes and the spread they earned against each other survives
+    intact — what cannot survive is the field as a whole wandering off the
+    scale it was measured on.
+    """
+    rated = chess_rated_bots()
+    if not rated:
+        return False
+    drift = (sum(rec['elo'] for _, rec, _ in rated)
+             - sum(t for _, _, t in rated)) / len(rated)
+    if abs(drift) < CHESS_ANCHOR_TOLERANCE:
+        return False
+    for _, rec, _ in rated:
+        rec['elo'] = round(rec['elo'] - drift, 1)
+    return True
+
+
+def recalibrate_chess_ratings():
+    """Move every bot's chess rating onto the measured scale, once.
+
+    The ratings already on disk were earned on a floating scale, so their
+    ordering is informative and their values are not. People are left exactly
+    as they are: a person's rating is theirs, and it becomes meaningful on its
+    own the moment the bots it was measured against are correct.
+    """
+    moved = []
+    for pl, rec, target in chess_rated_bots():
+        before = rec['elo']
+        rec['elo'] = round(target, 1)
+        rec['calibrated'] = True
+        if abs(before - rec['elo']) >= 0.1:
+            moved.append((pl['name'], before, rec['elo']))
+    STATS['chessCalibration'] = CHESS_CALIBRATION_VERSION
+    save_stats()
+    return moved
 
 
 def bump_streak(rec, score):
@@ -1784,7 +1912,19 @@ def record_result(summary):
         pl['ai'] = ps[i].get('kind') == 'ai'
         pl['profile'] = ps[i].get('profile')
         pl.setdefault('games', {})
-        rec = normalize_record(pl['games'].setdefault(game, blank_record()))
+        rec = pl['games'].get(game)
+        if rec is None:
+            rec = blank_record()
+            # A chess bot arrives at a strength that has already been measured.
+            # Starting it at ELO_START would spend its first few dozen games
+            # walking the rating to a number we were handed for free — and for
+            # a bot that is rarely picked, never getting there at all.
+            if game == 'chess' and ps[i].get('kind') == 'ai':
+                seed = chess_seed_elo(ps[i].get('profile'))
+                if seed is not None:
+                    rec['elo'] = round(seed, 1)
+                    rec['calibrated'] = True
+        rec = normalize_record(rec)
         pl['games'][game] = rec
         recs.append(rec)
 
@@ -1793,7 +1933,8 @@ def record_result(summary):
     # opponents whose ratings are already settled. That does mean a game is no
     # longer strictly zero-sum — the usual trade for letting new ratings find
     # their level in a handful of games rather than a hundred.
-    ks = [(ELO_K_NEW if rec['played'] < ELO_PROVISIONAL else ELO_K) / (m - 1)
+    ks = [(ELO_K_NEW if rec['played'] < ELO_PROVISIONAL
+           and not rec.get('calibrated') else ELO_K) / (m - 1)
           for rec in recs]
     deltas = [0.0] * m
     for a in range(m):
@@ -1859,6 +2000,8 @@ def record_result(summary):
             'ts': iso_now(), 'game': game, 'variant': variant, 'seats': len(ps),
             'reason': summary.get('reason'), 'players': entries})
         del STATS['history'][HISTORY_MAX:]
+    if game == 'chess':
+        anchor_chess_ratings()
     save_stats()
 
 
@@ -1874,7 +2017,8 @@ def leaderboard(game, limit=25):
         rec = normalize_record(rec)
         rows.append({'name': pl.get('name') or key,
                      'ai': bool(pl.get('ai')), 'profile': pl.get('profile'),
-                     'provisional': rec['played'] < ELO_PROVISIONAL,
+                     'provisional': (rec['played'] < ELO_PROVISIONAL
+                                     and not rec.get('calibrated')),
                      'retired': bool(pl.get('ai')) and key.split(' ')[0] not in current
                      and key not in current,
                      'elo': round(rec['elo'], 1), 'played': rec['played'],
@@ -3308,6 +3452,18 @@ def main():
     if args and args[0] == '--reset-ai':
         reset_ai()
         return
+    if args and args[0] == '--recalibrate':
+        load_stats()
+        load_profiles()
+        moved = recalibrate_chess_ratings()
+        if not CHESS_ELO_SEARCHER:
+            print('  No calibration table — run tools/chess_calibration.py '
+                  'and fill in CHESS_ELO_SEARCHER.')
+        elif not moved:
+            print('  Chess ratings already on the measured scale.')
+        for name, before, after in moved:
+            print('  %-12s %.0f -> %.0f' % (name, before, after))
+        return
     if args and args[0] == '--train':
         try:
             rounds = int(args[1]) if len(args) > 1 else DEFAULT_ROUNDS
@@ -3323,6 +3479,11 @@ def main():
         return
     load_stats()
     fresh = load_profiles()
+    # Ratings written before the chess scale was calibrated are on the old
+    # floating one. Correct them once, on the first start that knows better.
+    recalibrated = []
+    if STATS.get('chessCalibration') != CHESS_CALIBRATION_VERSION:
+        recalibrated = recalibrate_chess_ratings()
     if fresh:
         # a brand-new roster has no ratings yet, and an unrated bot tells you
         # nothing about how hard it is — so play them in before anyone looks
@@ -3345,6 +3506,11 @@ def main():
     print('  AI roster:   %s' % ', '.join(p['name'] for p in roster()))
     if fresh:
         print('               (new — playing calibration games to rate them)')
+    if recalibrated:
+        print('  Chess ELO:   recalibrated %d bot%s onto the measured scale'
+              % (len(recalibrated), '' if len(recalibrated) == 1 else 's'))
+        for name, before, after in recalibrated:
+            print('               %-12s %.0f -> %.0f' % (name, before, after))
     if CHESS_OK:
         print('  Chess:       on — brains in %s/'
               % os.path.basename(CHESS_BRAIN_DIR))
