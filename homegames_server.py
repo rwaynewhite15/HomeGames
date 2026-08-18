@@ -1891,7 +1891,12 @@ def recalibrate_chess_ratings():
             rec['elo'] = round(target, 1)
         if abs(before - rec['elo']) >= 0.1:
             moved.append((pl['name'], before, rec['elo']))
-    STATS['chessCalibration'] = CHESS_CALIBRATION_VERSION
+    # Only claim the work is done if there was a table to do it from. Marking
+    # it otherwise would mean a build shipped without one silently burns the
+    # single chance the rescale gets, and the ratings on disk would stay on the
+    # old scale forever with nothing to say so.
+    if CHESS_ELO_SEARCHER:
+        STATS['chessCalibration'] = CHESS_CALIBRATION_VERSION
     save_stats()
     return moved
 
